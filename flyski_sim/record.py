@@ -112,9 +112,12 @@ def main():
     ap.add_argument('--name', required=True)
     ap.add_argument('--seconds', type=float, default=None)
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--distance', type=float, default=3.0, help='카메라 거리(cm), S자 전체를 보려면 8~10')
+    ap.add_argument('--elevation', type=float, default=-35.)
     args = ap.parse_args()
     env = ENVS[args.stage](seed=args.seed)
-    record(env, make_policy(env, args.controller, args.model), args.name, args.seconds, seed=args.seed)
+    record(env, make_policy(env, args.controller, args.model), args.name, args.seconds, seed=args.seed,
+           distance=args.distance, elevation=args.elevation)
 
 
 if __name__ == '__main__':
