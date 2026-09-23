@@ -85,6 +85,15 @@ def main():
     m, d = physics.model.ptr, physics.data.ptr
     thorax = physics.model.name2id('walker/thorax', 'body')
     dt = env.control_timestep()
+    arena = env.task.root_entity
+
+    def off_course(pos) -> bool:
+        if not hasattr(arena, 'height_at'):
+            return False
+        size_x, size_y = arena.dim
+        x, y, z = (float(v) for v in pos)
+        return (abs(x) > size_x - 0.5 or abs(y) > size_y - 0.5 or
+                z < arena.height_at(x, y) - 1.0)
 
     with mujoco.viewer.launch_passive(m, d) as viewer:
         viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
@@ -95,7 +104,9 @@ def main():
         while viewer.is_running():
             t0 = time.time()
             ts = env.step(act())
-            if ts.last():
+            # 스키가 실제로 미끄러지게 된 뒤로는(RESEARCH_NOTES 32번) 에피소드 시간보다
+            # 먼저 코스 끝에 도달해 가장자리 밖으로 떨어진다 — 코스 이탈 시에도 리셋.
+            if ts.last() or off_course(physics.data.xpos[thorax]):
                 env.reset()
                 reset_policy()
             viewer.sync()
