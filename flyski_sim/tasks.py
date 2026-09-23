@@ -28,8 +28,10 @@ class SlopeSmokeTask(TemplateTask):
     """
 
     def __init__(self, ski_profile: SkiProfile | None = None,
-                 ski_layout: str = 'side_plate', edge_grip: bool = True, **kwargs):
+                 ski_layout: str = 'side_plate', edge_grip: bool = True,
+                 spawn_xy: tuple[float, float] | None = None, **kwargs):
         super().__init__(**kwargs)
+        self._spawn_xy = spawn_xy      # None이면 walker 기본 위치(원점).
         # 엣지 박힘(카빙 그립) 현상론 모델(edge_grip.py, RESEARCH_NOTES 35번).
         # False여도 skid/엣지각 지표는 계산한다(기준선 비교용).
         self._edge_grip_enabled = edge_grip
@@ -64,7 +66,7 @@ class SlopeSmokeTask(TemplateTask):
         if hasattr(self._arena, 'height_at'):
             self._arena.initialize_episode(physics, random_state)
         pos, quat = self._walker.get_pose(physics)
-        x, y = float(pos[0]), float(pos[1])
+        x, y = self._spawn_xy if self._spawn_xy is not None else (float(pos[0]), float(pos[1]))
         if hasattr(self._arena, 'height_at'):
             terrain_h = self._arena.height_at(x, y)
         else:

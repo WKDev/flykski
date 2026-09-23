@@ -47,6 +47,12 @@ python -m flyski_sim.live_view --controller connectome  # LIF 커넥톰 리듬�
 python -m flyski_sim.render_demo                        # renders/ 에 PNG/GIF 저장(오프스크린)
 
 python -m flyski_sim.ski_test                           # 스키 물리(접지/바인딩/휨/활강)
+python -m flyski_sim.carving_test --gif                 # 카빙 물리(엣지 방향=회전 방향, skid) + renders/carving/
+python -m flyski_sim.render_stance                      # 스키 스탠스 근접 샷(renders/stance/)
+
+# 강화학습(추가 설치: setup/rl_requirements.txt 참고)
+python -m flyski_sim.rl_task                            # S자 카빙 환경 점검(0/무작위 액션 보상 항목)
+python -m flyski_sim.train_rl --minutes 40 --envs 10    # PPO 1회, runs/<이름>/에 곡선/GIF
 python -m flyski_sim.run_topology_comparison_calibrated # real/shuffled/random 3x5 비교 (~25분)
 ```
 

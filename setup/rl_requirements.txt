@@ -1,0 +1,8 @@
+# 강화학습(flyski_sim/train_rl.py)용 추가 패키지. flybody env에서:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r setup/rl_requirements.txt
+# 2026-09-23 개발 PC에서 동작 확인한 버전.
+torch==2.14.0
+stable-baselines3==2.9.0
+gymnasium==1.3.0
+tensorboard
