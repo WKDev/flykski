@@ -1,0 +1,361 @@
+"bodyid","type","somaNeuromere","predictedNt","somaSide","rootSide"
+801761,"Sternal posterior rotator MN","T2","unclear","R",NA
+804025,"Fe reductor MN","T2","unclear","L",NA
+803803,"Pleural remotor/abductor MN","T1","unclear","L",NA
+801768,"Sternal posterior rotator MN","T2","histamine","L",NA
+803226,"Sternal posterior rotator MN","T2","histamine","L",NA
+801148,"Sternotrochanter MN","T3","unclear","R",NA
+804078,"MNhl29","T3","unclear","L",NA
+800504,"Sternotrochanter MN","T3","unclear","L",NA
+800241,"hg1 MN","T2","acetylcholine","L",NA
+902492,"Pleural remotor/abductor MN","T2","unclear","L",NA
+805313,"Pleural remotor/abductor MN","T1","acetylcholine","R",NA
+803086,"MNml29","T2","unclear","L",NA
+802964,"Sternal posterior rotator MN","T3","unclear","L",NA
+800917,"hg1 MN","T2","unclear","R",NA
+801375,"Sternotrochanter MN","T3","unclear","R",NA
+800962,"Sternal posterior rotator MN","T2","unclear","R",NA
+803314,"Pleural remotor/abductor MN","T1","unclear","R",NA
+801492,"Sternal posterior rotator MN","T3","unclear","L",NA
+902719,"Pleural remotor/abductor MN","T2","unclear","R",NA
+802509,"Pleural remotor/abductor MN","T1","unclear","L",NA
+800553,"Pleural remotor/abductor MN","T3","gaba","R",NA
+903643,"Sternal posterior rotator MN","T3","gaba","R",NA
+905421,"Pleural remotor/abductor MN","T2","histamine","L",NA
+801292,"b3 MN","T2","unclear","L",NA
+808453,"Tr extensor MN","T3","unclear","R",NA
+800290,"Pleural remotor/abductor MN","T3","unclear","R",NA
+802120,"b3 MN","T2","unclear","R",NA
+800776,"Pleural remotor/abductor MN","T2","unclear","R",NA
+801079,"Sternotrochanter MN","T1","histamine","R",NA
+801090,"Sternotrochanter MN","T3","unclear","R",NA
+800578,"Fe reductor MN","T3","unclear","L",NA
+905145,"Fe reductor MN","T2","unclear","R",NA
+905235,"Acc. ti flexor MN","T2","unclear","R",NA
+800316,"Sternal anterior rotator MN","T3","unclear","R",NA
+803499,"Pleural remotor/abductor MN","T2","unclear","R",NA
+807395,"MNml29","T2","unclear","R",NA
+903642,"Sternal posterior rotator MN","T3","acetylcholine","R",NA
+800541,"Pleural remotor/abductor MN","T2","unclear","L",NA
+812872,"ltm MN","T2","unclear","R",NA
+903689,"Sternal anterior rotator MN","T2","histamine","L",NA
+800851,"Sternotrochanter MN","T3","unclear","L",NA
+800175,"Pleural remotor/abductor MN","T3","unclear","L",NA
+803412,"Tr extensor MN","T1","unclear","L",NA
+801946,"Sternal anterior rotator MN","T2","unclear","R",NA
+902962,"Fe reductor MN","T3","unclear","R",NA
+801267,"MNhl02","T3","unclear","R",NA
+802215,"Sternal anterior rotator MN","T3","unclear","L",NA
+802521,"Sternal posterior rotator MN","T2","unclear","R",NA
+816022,"MNhl29","T3","unclear","R",NA
+802361,"Sternotrochanter MN","T1","unclear","L",NA
+803698,"Sternotrochanter MN","T1","unclear","R",NA
+801685,"Sternotrochanter MN","T1","unclear","L",NA
+801915,"Sternal posterior rotator MN","T1","unclear","L",NA
+800190,"MNwm35","T2","unclear","R",NA
+903852,"hg3 MN","T2","gaba","R",NA
+813480,"Sternal adductor MN","T1","unclear","L",NA
+814983,"MNml78","T2","unclear","R",NA
+805568,"Acc. ti flexor MN","T2","unclear","R",NA
+803704,"Sternal posterior rotator MN","T2","histamine","L",NA
+810720,"Acc. tr flexor MN","T2","unclear","R",NA
+905661,"Tr extensor MN","T3","unclear","R",NA
+808011,"Sternal posterior rotator MN","T1","unclear","R",NA
+801715,"Sternal posterior rotator MN","T3","unclear","L",NA
+800158,"Ti extensor MN","T3","unclear","R",NA
+801021,"hg3 MN","T2","unclear","L",NA
+800606,"MNwm35","T2","unclear","L",NA
+801058,"Tr flexor MN","T2","unclear","R",NA
+802232,"Tr flexor MN","T2","unclear","L",NA
+801057,"Tr flexor MN","T2","unclear","R",NA
+805410,"Sternal posterior rotator MN","T1","unclear","R",NA
+801220,"i1 MN","T2","acetylcholine","L",NA
+825681,"ltm MN","T2","unclear","L",NA
+807281,"Tergopleural/Pleural promotor MN","T1","unclear","L",NA
+838321,"Tr extensor MN","T1","unclear","R",NA
+807906,"Tr extensor MN","T1","unclear","L",NA
+902310,"Pleural remotor/abductor MN","T3","unclear","L",NA
+802731,"MNhl59","T3","unclear","L",NA
+806923,"Sternal anterior rotator MN","T1","unclear","L",NA
+801637,"Acc. ti flexor MN","T3","unclear","R",NA
+815097,"ltm MN","T3","unclear","R",NA
+904657,"Sternotrochanter MN","T2","unclear","L",NA
+907256,"Sternal posterior rotator MN","T3","unclear","R",NA
+815854,"Sternal adductor MN","T1","unclear","R",NA
+801335,"MNhl59","T3","unclear","R",NA
+824104,"ltm MN","T3","unclear","L",NA
+813629,"Acc. ti flexor MN","T3","unclear","R",NA
+822047,"ltm1-tibia MN","T1","unclear","L",NA
+816215,"Acc. ti flexor MN","T1","unclear","L",NA
+907422,"MNml78","T2","unclear","L",NA
+912694,"ltm1-tibia MN","T3","unclear","L",NA
+914852,"Acc. tr flexor MN","T3","unclear","R",NA
+909078,"Tr extensor MN","T2","unclear","L",NA
+806599,"Acc. ti flexor MN","T1","unclear","L",NA
+819278,"Ta depressor MN","T1","unclear","L",NA
+816404,"Acc. ti flexor MN","T1","unclear","L",NA
+805745,"Tergopleural/Pleural promotor MN","T1","unclear","R",NA
+801918,"Sternal anterior rotator MN","T1","unclear","R",NA
+828978,"Sternotrochanter MN","T3","unclear","L",NA
+817655,"Ta depressor MN","T1","acetylcholine","L",NA
+817681,"Tr flexor MN","T2","unclear","R",NA
+1057471940,"ltm1-tibia MN","T1","unclear","R",NA
+824315,"Tr flexor MN","T2","unclear","R",NA
+905559,"MNml79","T2","unclear","R",NA
+905236,"MNml80","T2","unclear","R",NA
+817990,"MNml78","T2","unclear","R",NA
+814942,"Tr extensor MN","T2","unclear","R",NA
+803523,"ltm1-tibia MN","T2","unclear","R",NA
+802407,"Sternotrochanter MN","T2","unclear","L",NA
+1050335829,"Sternal posterior rotator MN","T1","unclear","L",NA
+905928,"Tr flexor MN","T3","unclear","R",NA
+805477,"Tr extensor MN","T2","unclear","L",NA
+903844,"MNml80","T2","unclear","R",NA
+803589,"ps2 MN","T2","unclear","L",NA
+804741,"ltm1-tibia MN","T3","unclear","R",NA
+819674,"Acc. ti flexor MN","T2","unclear","L",NA
+928579,"Ti extensor MN","T2","unclear","R",NA
+802864,"Sternotrochanter MN","T2","unclear","R",NA
+805511,"MNad33","A1","unclear","R",NA
+812531,"Acc. ti flexor MN","T2","unclear","R",NA
+800637,"i1 MN","T2","histamine","R",NA
+811652,"Fe reductor MN","T1","unclear","R",NA
+909618,"Acc. tr flexor MN","T1","unclear","L",NA
+804245,"FNM2","T1","unclear","R",NA
+840981,"Tr extensor MN","T3","unclear","L",NA
+905849,"Tergotr. MN","T3","unclear","R",NA
+1050272154,NA,"T3","unclear","L",NA
+905586,"Acc. tr flexor MN","T3","unclear","R",NA
+822274,"ltm MN","T1","unclear","L",NA
+818553,"ltm1-tibia MN","T1","unclear","L",NA
+813696,"ADNM2 MN","T1","unclear","R",NA
+819203,"Tr flexor MN","T2","unclear","R",NA
+908094,"Acc. ti flexor MN","T2","unclear","L",NA
+820632,"MNml80","T2","unclear","L",NA
+800589,"Tr flexor MN","T2","unclear","L",NA
+804343,"ADNM2 MN","T1","unclear","L",NA
+801234,"Ti extensor MN","T2","unclear","L",NA
+1050111955,"Ta levator MN","T1","unclear","L",NA
+808640,"Sternal posterior rotator MN","T1","unclear","L",NA
+815344,"Ti extensor MN","T1","unclear","L",NA
+801932,NA,"T3","unclear","R",NA
+819869,"Acc. ti flexor MN","T1","unclear","L",NA
+907848,"Acc. ti flexor MN","T2","unclear","R",NA
+856359,"Sternotrochanter MN","T2","unclear","R",NA
+817374,"Acc. ti flexor MN","T3","unclear","L",NA
+928688,"FNM2","T1","unclear","L",NA
+909371,"Sternal adductor MN","T2","acetylcholine","R",NA
+927828,"Acc. tr flexor MN","T2","unclear","L",NA
+807813,"MNad45","A1","unclear","L",NA
+809304,"MNad45","A1","unclear","R",NA
+905487,"ltm MN","T2","unclear","R",NA
+895449,"MNml78","T2","unclear","L",NA
+1050938258,"Tr flexor MN","T3","acetylcholine","R",NA
+1050046221,"MNml80","T2","unclear","L",NA
+823405,"ltm MN","T3","unclear","L",NA
+1050202461,"Acc. ti flexor MN","T3","unclear","R",NA
+939950,"MNhl60","T3","unclear","R",NA
+821494,"MNml79","T2","unclear","L",NA
+807165,"Ti flexor MN","T1","unclear","L",NA
+905792,"MNhl01","T3","unclear","R",NA
+800061,"Tergopleural/Pleural promotor MN","T1","unclear","L",NA
+802837,"ps2 MN","T2","unclear","R",NA
+809604,"Acc. tr flexor MN","T3","unclear","L",NA
+867630,"Acc. ti flexor MN","T1","unclear","L",NA
+907387,"MNml77","T2","unclear","R",NA
+903508,"MNml81","T2","unclear","L",NA
+903153,"MNnm13","T1","unclear","R",NA
+801185,"tpn MN","T2","unclear","L",NA
+911453,"ltm MN","T1","unclear","L",NA
+811400,"MNxm02","T2","unclear","L",NA
+1050306082,"Acc. tr flexor MN","T1","unclear","R",NA
+818842,"Tr extensor MN","T1","unclear","R",NA
+807640,"Tr flexor MN","T3","unclear","R",NA
+812953,"Ti extensor MN","T3","unclear","L",NA
+802552,"Tergotr. MN","T1","unclear","L",NA
+813566,"Fe reductor MN","T1","unclear","R",NA
+803480,"MNml82","T2","unclear","L",NA
+903298,"Acc. ti flexor MN","T1","unclear","L",NA
+1050730563,"Acc. tr flexor MN","T3","unclear","L",NA
+1050403926,"Ta depressor MN","T1","unclear","L",NA
+911134,"Acc. tr flexor MN","T1","unclear","L",NA
+806489,"MNnm14","T1","unclear","L",NA
+1050151215,"MNml78","T2","unclear","L",NA
+919509,"Sternal anterior rotator MN","T1","unclear","L",NA
+816501,"MNhl02","T3","unclear","L",NA
+807160,"MNhl01","T3","unclear","L",NA
+924716,"Tergotr. MN","T1","unclear","R",NA
+806943,"MNad47","A1","unclear","R",NA
+806898,"Fe reductor MN","T1","unclear","R",NA
+803829,"Tr flexor MN","T2","unclear","L",NA
+801477,"MNml81","T2","unclear","R",NA
+801949,"tp2 MN","T2","unclear","L",NA
+800906,"hg4 MN","T2","unclear","R",NA
+802251,"MNad34","A1","unclear","L",NA
+800358,"MNhl64","T3","unclear","R",NA
+1050660827,"Ta depressor MN","T1","unclear","L",NA
+910095,"Tr flexor MN","T2","unclear","R",NA
+824997,"ltm MN","T2","unclear","R",NA
+907443,"ltm1-tibia MN","T2","unclear","L",NA
+813603,"ltm MN","T2","unclear","L",NA
+1050126678,"Acc. ti flexor MN","T1","unclear","R",NA
+1050013851,"ltm MN","T1","unclear","R",NA
+860084,"ltm MN","T1","unclear","R",NA
+801469,"Sternal anterior rotator MN","T1","unclear","R",NA
+1050669248,"Tr flexor MN","T2","unclear","L",NA
+903158,"Tr flexor MN","T2","unclear","L",NA
+810535,"Tergopleural/Pleural promotor MN","T1","unclear","R",NA
+818719,"Tr flexor MN","T1","unclear","R",NA
+903159,"Tr flexor MN","T2","unclear","L",NA
+805598,"Fe reductor MN","T1","unclear","L",NA
+876504,NA,"T3","unclear","L",NA
+1050233038,"Acc. ti flexor MN","T3","unclear","L",NA
+1050123559,"Acc. ti flexor MN","T3","unclear","L",NA
+1050080384,"ltm MN","T3","unclear","L",NA
+802252,"MNad34","A1","unclear","R",NA
+1050160514,"Acc. ti flexor MN","T3","unclear","R",NA
+914837,"ltm1-tibia MN","T3","unclear","R",NA
+1050248133,"Ta depressor MN","T1","unclear","R",NA
+804514,"Tergotr. MN","T3","unclear","L",NA
+924167,"STTMm","T2","unclear","L",NA
+822252,"MNhl64","T3","unclear","L",NA
+1059707690,"Acc. ti flexor MN","T3","unclear","R",NA
+1050203465,"ltm MN","T3","unclear","R",NA
+1050091102,"ltm MN","T3","unclear","R",NA
+1050013311,"Ti flexor MN","T3","unclear","R",NA
+910334,"ltm MN","T1","unclear","L",NA
+821291,"Acc. tr flexor MN","T1","unclear","L",NA
+1052521030,"Acc. ti flexor MN","T2","unclear","R",NA
+1050673969,"MNml80","T2","unclear","R",NA
+824689,"ltm MN","T2","unclear","L",NA
+816018,"Sternal adductor MN","T2","unclear","L",NA
+822185,"MNml77","T2","unclear","L",NA
+810541,"Ta levator MN","T1","unclear","L",NA
+812111,"Fe reductor MN","T1","unclear","L",NA
+804941,"Fe reductor MN","T1","unclear","L",NA
+804851,"Sternal posterior rotator MN","T1","unclear","L",NA
+840740,"Ti flexor MN","T3","unclear","R",NA
+858248,"ltm1-tibia MN","T3","unclear","L",NA
+1050174251,"ltm2-femur MN","T3","unclear","R",NA
+803830,"Fe reductor MN","T1","unclear","R",NA
+801824,"Tergopleural/Pleural promotor MN","T1","unclear","R",NA
+924142,"Tr flexor MN","T2","unclear","R",NA
+800899,"tp2 MN","T2","unclear","R",NA
+890541,"ltm MN","T3","unclear","L",NA
+801548,"Sternal anterior rotator MN","T3","unclear","L",NA
+800875,"MNad33","A1","unclear","L",NA
+929376,"Ti flexor MN","T3","unclear","L",NA
+852881,NA,"T3","unclear","R",NA
+815246,"Acc. ti flexor MN","T1","unclear","L",NA
+867926,"Acc. tr flexor MN","T2","unclear","R",NA
+840530,"Tr extensor MN","T2","unclear","R",NA
+821375,"Acc. tr flexor MN","T2","unclear","L",NA
+1050380236,"Ta depressor MN","T1","unclear","R",NA
+817347,"Tergotr. MN","T1","unclear","R",NA
+800230,"MNml82","T2","unclear","R",NA
+909255,"Acc. ti flexor MN","T2","unclear","R",NA
+817640,"Tr flexor MN","T1","unclear","R",NA
+803237,"Tergotr. MN","T1","unclear","L",NA
+809935,"Ti extensor MN","T3","unclear","R",NA
+818399,"Sternal posterior rotator MN","T3","unclear","L",NA
+826996,"ltm2-femur MN","T2","unclear","L",NA
+857751,"ltm2-femur MN","T3","unclear","L",NA
+805255,"MNad32","A1","unclear","L",NA
+801736,"MNhl62","T3","unclear","L",NA
+934519,"Acc. ti flexor MN","T3","unclear","L",NA
+807854,"Sternal adductor MN","T3","unclear","R",NA
+805326,"MNad32","A1","unclear","R",NA
+803717,"MNad35","A1","unclear","R",NA
+801693,"Fe reductor MN","T3","unclear","R",NA
+1050460102,"Acc. ti flexor MN","T3","unclear","R",NA
+869369,"MNhl65","T3","unclear","R",NA
+828238,NA,"T3","unclear","R",NA
+817283,"Acc. ti flexor MN","T1","unclear","L",NA
+814163,"Fe reductor MN","T1","unclear","L",NA
+804465,"Tergotr. MN","T1","unclear","L",NA
+1050160593,"MNml76","T2","unclear","R",NA
+820574,"MNml83","T2","unclear","R",NA
+801813,"Sternal anterior rotator MN","T2","unclear","R",NA
+1051356801,"Acc. ti flexor MN","T2","unclear","L",NA
+1050119039,"MNml78","T2","unclear","L",NA
+903579,"Tr flexor MN","T2","unclear","L",NA
+830480,"Acc. ti flexor MN","T2","unclear","L",NA
+809670,"Acc. ti flexor MN","T2","unclear","L",NA
+807972,"ltm2-femur MN","T2","unclear","L",NA
+1050268065,"Acc. ti flexor MN","T1","unclear","R",NA
+1050091581,"Acc. ti flexor MN","T1","unclear","R",NA
+817509,"Acc. ti flexor MN","T1","unclear","R",NA
+821154,"Acc. tr flexor MN","T3","unclear","L",NA
+1050015101,"ltm MN","T1","unclear","R",NA
+817210,"Ta levator MN","T1","unclear","R",NA
+822092,"ltm MN","T1","unclear","L",NA
+801173,"Tergopleural/Pleural promotor MN","T1","unclear","L",NA
+807176,"MNad28","T3","unclear","R",NA
+830847,"STTMm","T2","acetylcholine","L",NA
+800621,"Ti extensor MN","T3","unclear","L",NA
+1050098047,"Tr flexor MN","T3","unclear","R",NA
+802072,"Tergopleural/Pleural promotor MN","T1","unclear","R",NA
+903363,"Ti flexor MN","T2","unclear","R",NA
+932321,"DVMn 3a, b","T1","unclear","R",NA
+803982,"DVMn 2a, b","T2","unclear","L",NA
+801815,"tpn MN","T2","unclear","R",NA
+904184,"Sternal adductor MN","T3","unclear","L",NA
+843389,"Acc. ti flexor MN","T3","unclear","L",NA
+807784,"hi2 MN","T3","unclear","L",NA
+806754,"MNad31","A1","unclear","L",NA
+803813,"MNad36","A1","unclear","L",NA
+801304,"MNad42","A1","unclear","L",NA
+1050263576,"Acc. ti flexor MN","T3","unclear","L",NA
+1050003192,"Acc. ti flexor MN","T3","unclear","L",NA
+808685,"Ti flexor MN","T3","unclear","R",NA
+801721,"Tr flexor MN","T3","unclear","R",NA
+801362,"MNad41","A1","unclear","R",NA
+903090,"MNhl62","T3","unclear","R",NA
+821449,"ltm2-femur MN","T3","unclear","R",NA
+815958,"Acc. tr flexor MN","T3","unclear","R",NA
+1051670893,"Tr flexor MN","T1","unclear","L",NA
+1051062549,"Ta depressor MN","T1","unclear","L",NA
+1050115387,"Acc. ti flexor MN","T1","unclear","L",NA
+934091,"Tergopleural/Pleural promotor MN","T1","unclear","L",NA
+818057,"Ti flexor MN","T1","unclear","L",NA
+810639,"Tr flexor MN","T1","unclear","L",NA
+908673,"ltm2-femur MN","T2","unclear","R",NA
+852673,"ltm2-femur MN","T2","unclear","R",NA
+804405,"Ti flexor MN","T2","unclear","R",NA
+801816,"DVMn 1a-c","T2","unclear","R",NA
+927808,"Ti flexor MN","T2","unclear","L",NA
+820764,"Fe reductor MN","T2","unclear","L",NA
+800412,"DVMn 1a-c","T2","unclear","L",NA
+800184,"MNwm36","T2","acetylcholine","L",NA
+1050340850,NA,"T1",NA,"R",NA
+1050156705,"Acc. ti flexor MN","T1","unclear","R",NA
+825721,"Ta depressor MN","T1","unclear","R",NA
+820110,"Ta levator MN","T1","unclear","R",NA
+807873,"Acc. tr flexor MN","T1","unclear","R",NA
+802152,"MNnm08","T1","unclear","R",NA
+1050303231,"Ti flexor MN","T3","unclear","R",NA
+830514,"Ti extensor MN","T2","unclear","R",NA
+804257,"Ti extensor MN","T1","unclear","R",NA
+1051054875,"Sternal posterior rotator MN","T2","unclear","L",NA
+809912,"Ti flexor MN","T1","unclear","L",NA
+1050100010,"Ti flexor MN","T3","unclear","L",NA
+802937,"MNad63","A1","unclear","L",NA
+832490,"Sternal anterior rotator MN","T2","unclear","L",NA
+824223,"STTMm","T2","unclear","R",NA
+801391,"STTMm","T2","unclear","R",NA
+1050202259,"MNhl65","T3","unclear","L",NA
+936696,"MNhl65","T3","unclear","L",NA
+803451,"MNad35","A1","unclear","L",NA
+823665,"Ti flexor MN","T3","unclear","R",NA
+837745,"Acc. ti flexor MN","T1","unclear","R",NA
+822742,"MNml80","T2","unclear","L",NA
+802295,"Ti flexor MN","T2","unclear","L",NA
+800911,"Ti extensor MN","T2","unclear","L",NA
+814489,"Tr flexor MN","T1","unclear","L",NA
+805309,"ltm2-femur MN","T1","unclear","L",NA
+803599,"DVMn 2a, b","T2","unclear","R",NA
+800928,"ps1 MN","T2","histamine","L",NA
+800573,"i2 MN","T2","unclear","R",NA
+800890,"DLMn c-f","T1","unclear","L",NA
+800743,"ps1 MN","T2","unclear","R",NA
+800381,"i2 MN","T2","acetylcholine","L",NA

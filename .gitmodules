@@ -1,0 +1,3 @@
+[submodule "flybody"]
+	path = flybody
+	url = https://github.com/TuragaLab/flybody.git

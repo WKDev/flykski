@@ -1,0 +1,28 @@
+# flykski 시뮬레이션 환경 (Python/MuJoCo). 버전은 2026-09-23 개발 PC(Windows 11)에서
+# 전체 테스트가 통과한 조합으로 고정했다.
+#
+#   git clone --recursive https://github.com/WKDev/flykski.git
+#   cd flykski
+#   conda env create -f environment.yml
+#   conda activate flybody
+#   pip install -e ./flybody          # flybody 서브모듈(TuragaLab/flybody @ d015e9b)
+#
+# R/natverse(커넥톰 재추출용)는 별도 환경 — setup/malecns_environment.yml 참고.
+name: flybody
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - mujoco==3.14.0
+      - dm_control==1.0.47
+      - dm-tree==0.1.10
+      - labmaze==1.0.6
+      - absl-py==2.5.0
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - scipy==1.15.3
+      - pillow==12.3.0
+      - matplotlib==3.10.9
+      - glfw==2.10.2

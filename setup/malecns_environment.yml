@@ -1,0 +1,16 @@
+# 커넥톰 재추출용 R 환경 (선택). flyski_sim/connectome/*.csv 는 이미 레포에 있으므로
+# 시뮬레이션/학습만 할 거면 필요 없다.
+#
+#   conda env create -f setup/malecns_environment.yml
+#   conda activate malecns
+#   Rscript setup/install_malecns.R        # natverse 의존성 체인, 35~40분 소요
+#   # .env 의 NEUPRINT_TOKEN 을 ~/.Renviron 에도 넣어둘 것(R이 자동 로드)
+#
+# Windows에서는 R 실행 전 conda env의 Library/bin 등을 PATH에 넣어야 할 수 있다
+# (ENVIRONMENT.md 2절). R 공식 GUI 인스톨러/natmanager(pak)는 이 조합에서 실패했음.
+name: malecns
+channels:
+  - conda-forge
+dependencies:
+  - r-base=4.5.3
+  - r-remotes     # malecns/neuprintr 는 install_malecns.R 이 GitHub에서 설치

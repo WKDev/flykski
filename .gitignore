@@ -1,0 +1,21 @@
+# 시크릿 — 절대 커밋 금지 (neuprint 토큰)
+.env
+.Renviron
+
+# 로컬 에이전트/IDE 설정
+.claude/
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# flybody 대용량 데이터(체크포인트/데이터셋) — 필요 시 figshare에서 수동 다운로드
+flybody-data/
+
+# R
+.Rhistory
+.RData
