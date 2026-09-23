@@ -8,11 +8,13 @@
 - 관측(감각 되먹임, 모두 몸 기준 좌표 또는 스칼라):
   고유감각(다리 관절각-스탠스, 관절속도), 전정(몸 기준 중력 방향, 각속도, 선속도),
   스키 감각(좌/우 부호 있는 엣지각, 옆미끄럼 비율, 접지 여부, 그립 사용률),
-  후각(좌/우 더듬이 농도, 좌우 차, 직전 대비 변화), 직전 액션.
+  후각(좌/우 더듬이 농도, 좌우 차, 직전 대비 변화), 속도 명령(목표 속력/20), 직전 액션.
   게이트 위치 같은 특권 정보는 넣지 않는다(후각으로만 찾아야 함).
-- 보상: 아래 REWARD_WEIGHTS와 `_reward` 참고.
+- 보상: 아래 REWARD_WEIGHTS와 `_task_reward` 참고.
+- 커리큘럼(RESEARCH_NOTES 37번): 단계마다 관측/액션 공간이 같아서 앞 단계 정책을 이어서
+  학습할 수 있다. 1단계 `SpeedControlEnv`(정지/출발, 플루크 제동), 이후 `SkiCourseEnv`.
 
-    python -m flyski_sim.rl_task      # 무작위/0 액션으로 한 에피소드 돌려 보상 항목 출력
+    python -m flyski_sim.rl_task [course|speed]   # 0/무작위 액션으로 한 에피소드씩 보상 항목 출력
 """
 from __future__ import annotations
 
@@ -28,7 +30,8 @@ from flyski_sim.tasks import SlopeSmokeTask
 from flyski_sim.terrain import SlopedMoguls
 
 CONTROL_DT = 0.01            # 정책 주기(s). 물리 2e-4 x 50 서브스텝.
-ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad.
+ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
+                             # 최대 0.78rad 움직여야 해서 커리큘럼 단계는 1.0을 쓴다.
 EPISODE_SECONDS = 3.0
 COURSE = dict(dim=(30., 8.), slope_deg=15., gate_spacing=8., gate_amplitude=3.,
               pass_radius=1.5, spawn_margin=2.)
@@ -82,9 +85,14 @@ class SkiCourseEnv(gym.Env):
 
     metadata = {'render_modes': ['rgb_array']}
 
-    def __init__(self, profile: str = 'all_mountain', seed: int = 0):
+    episode_seconds = EPISODE_SECONDS
+
+    def __init__(self, profile: str = 'all_mountain', seed: int = 0,
+                 action_scale: float = ACTION_SCALE):
         self.task = SkiCourseTask(profile, seed)
-        self.env = composer.Environment(task=self.task, time_limit=EPISODE_SECONDS,
+        self._action_scale = action_scale
+        self._cmd = 15.                  # 속도 명령(cm/s). 코스 단계는 "진행" 고정.
+        self.env = composer.Environment(task=self.task, time_limit=self.episode_seconds,
                                         random_state=np.random.RandomState(seed),
                                         strip_singleton_obs_buffer_dim=True,
                                         recompile_mjcf_every_episode=False)
@@ -111,7 +119,7 @@ class SkiCourseEnv(gym.Env):
         self._body_geoms = walker_geoms - ski_geoms
         n_act = len(self._leg_names)
         self.action_space = gym.spaces.Box(-1., 1., (n_act,), np.float32)
-        obs_dim = 2 * n_act + 9 + 8 + 4 + n_act
+        obs_dim = 2 * n_act + 9 + 8 + 4 + 1 + n_act
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, (obs_dim,), np.float32)
         self._prev_a = np.zeros(n_act)
 
@@ -144,6 +152,7 @@ class SkiCourseEnv(gym.Env):
             grav_body, 0.05 * angvel, 0.05 * linvel,
             self._ski_sense(p, metrics),
             [odor[0], odor[1], 10. * (odor[0] - odor[1]), 10. * d_odor],
+            [self._cmd / 20.],
             self._prev_a])
         return np.nan_to_num(obs).astype(np.float32)
 
@@ -154,20 +163,22 @@ class SkiCourseEnv(gym.Env):
         self.task.ski_metrics(self.env.physics)
         self._prev_a[:] = 0.
         self._odor_prev = self._odor(self.env.physics).mean()
-        self._stats = dict(gates=0, misses=0, carve=0., steps=0)
+        self._stats = dict(gates=0, misses=0, carve=0., steps=0, track=0.)
+        self._on_reset()
         metrics = self.task.ski_metrics(self.env.physics)
         return self._obs(metrics, self._odor(self.env.physics), 0.), {}
 
     def step(self, action):
         a = np.clip(np.asarray(action, dtype=float), -1., 1.)
         full = np.zeros(self._nu)
-        full[self._act_idx] = ACTION_SCALE * a
+        full[self._act_idx] = self._action_scale * a
+        self._on_step()
         p = self.env.physics
         try:
             ts = self.env.step(full)
         except PhysicsError:
             obs = np.zeros(self.observation_space.shape, np.float32)
-            return obs, REWARD_WEIGHTS['fall'], True, False, dict(self._stats, reason='physics_error')
+            return obs, self.fall_penalty, True, False, dict(self._stats, reason='physics_error')
         metrics = self.task.ski_metrics(p)
         odor = self._odor(p)
         r, parts, terminated, reason = self._reward(p, a, metrics, odor)
@@ -181,8 +192,42 @@ class SkiCourseEnv(gym.Env):
             info['reason'] = reason or 'time'
         return self._obs(metrics, odor, d_odor), float(r), terminated, truncated, info
 
+    # ---- 단계별 훅 ----
+    def _on_reset(self):
+        pass
+
+    def _on_step(self):
+        pass
+
     # ---- 보상/종료 ----
+    fall_penalty = REWARD_WEIGHTS['fall']
+
     def _reward(self, p, a, metrics, odor):
+        parts = self._task_reward(p, a, metrics, odor)
+        reason = self._termination(p)
+        if reason:
+            parts['fall'] = self.fall_penalty
+        return sum(parts.values()), parts, reason is not None, reason
+
+    def _termination(self, p):
+        """넘어짐, 몸(스키 외) 접지, 코스 이탈이면 이유 문자열, 아니면 None."""
+        d = p.data
+        pos = d.xpos[self._th]
+        up = float(d.xmat[self._th].reshape(3, 3)[:, 2] @ self.task._slope_n)
+        body_touch = any((c.geom1 in self._body_geoms and p.model.geom_bodyid[c.geom2] == 0) or
+                         (c.geom2 in self._body_geoms and p.model.geom_bodyid[c.geom1] == 0)
+                         for c in d.contact[:d.ncon])
+        dim = COURSE['dim']
+        if up < 0.5:
+            return 'fallen'
+        if body_touch:
+            return 'body_touch'
+        if abs(pos[1]) > dim[1] - 0.5 or pos[0] > dim[0] - 1.:
+            return 'off_course'
+        return None
+
+    def _task_reward(self, p, a, metrics, odor):
+        """코스 단계: 게이트/카빙/엣지 회전/주행/후각 셰이핑."""
         w = REWARD_WEIGHTS
         d = p.data
         pos = d.xpos[self._th]
@@ -218,23 +263,7 @@ class SkiCourseEnv(gym.Env):
                 want = np.sign(v[0] * to_gate[1] - v[1] * to_gate[0])   # +: 게이트가 왼쪽.
                 if carve_dir == want:
                     parts['edge_turn'] = w['edge_turn'] * q
-        # 종료: 넘어짐, 몸(스키 외) 접지, 코스 이탈.
-        up = float(d.xmat[self._th].reshape(3, 3)[:, 2] @ self.task._slope_n)
-        body_touch = any((c.geom1 in self._body_geoms and p.model.geom_bodyid[c.geom2] == 0) or
-                         (c.geom2 in self._body_geoms and p.model.geom_bodyid[c.geom1] == 0)
-                         for c in d.contact[:d.ncon])
-        dim = COURSE['dim']
-        off = abs(pos[1]) > dim[1] - 0.5 or pos[0] > dim[0] - 1.
-        reason = None
-        if up < 0.5:
-            reason = 'fallen'
-        elif body_touch:
-            reason = 'body_touch'
-        elif off:
-            reason = 'off_course'
-        if reason:
-            parts['fall'] = w['fall']
-        return sum(parts.values()), parts, reason is not None, reason
+        return parts
 
     def render(self):
         from dm_control.mujoco.engine import MovableCamera
@@ -244,9 +273,61 @@ class SkiCourseEnv(gym.Env):
         return cam.render()
 
 
+SPEED_WEIGHTS = dict(
+    track=1.0,           # exp(-((속력 - 명령)/SPEED_SIGMA)^2).
+    lateral=-0.02,       # 옆(y) 속도 cm/s 당. 폴라인에서 크게 벗어나지 않게.
+    alive=0.05,
+    ctrl=-0.01,
+    fall=-20.,           # PPO 1회차는 -5가 카빙 보상에 묻혀 넘어짐이 ~70%였다.
+)
+SPEED_SIGMA = 4.               # cm/s
+SPEED_COMMANDS = (0., 5., 10., 15.)
+SPEED_HOLD = (0.6, 1.2)        # 명령 유지 시간(s) 범위.
+
+
+class SpeedControlEnv(SkiCourseEnv):
+    """커리큘럼 1단계: 속도 명령(정지/천천히/출발) 따라가기. 플루크 제동을 배우는 단계.
+
+    15° 사면에서 스탠스 그대로면 ~18cm/s로 내려가므로, 정지/저속 명령을 지키려면
+    쐐기(플루크)나 엣지로 제동해야 한다(snowplow_test: 쐐기 20°면 ~2cm/s). 명령은
+    SPEED_HOLD 간격으로 무작위로 바뀌고, 첫 명령은 항상 0(출발 전 정지)이다.
+    """
+
+    episode_seconds = 4.0
+    fall_penalty = SPEED_WEIGHTS['fall']
+
+    def __init__(self, profile: str = 'all_mountain', seed: int = 0, action_scale: float = 1.0):
+        super().__init__(profile, seed, action_scale)
+        self._rng = np.random.RandomState(seed + 1000)
+
+    def _on_reset(self):
+        self._cmd = 0.
+        self._t = 0.
+        self._next_switch = self._rng.uniform(*SPEED_HOLD)
+
+    def _on_step(self):
+        self._t += CONTROL_DT
+        if self._t >= self._next_switch:
+            self._cmd = float(self._rng.choice([c for c in SPEED_COMMANDS if c != self._cmd]))
+            self._next_switch = self._t + self._rng.uniform(*SPEED_HOLD)
+
+    def _task_reward(self, p, a, metrics, odor):
+        w = SPEED_WEIGHTS
+        v = p.data.qvel[:3]
+        err = float(np.linalg.norm(v[:2])) - self._cmd
+        self._stats['track'] += abs(err)
+        return dict(track=w['track'] * float(np.exp(-(err / SPEED_SIGMA) ** 2)),
+                    lateral=w['lateral'] * abs(float(v[1])),
+                    alive=w['alive'], ctrl=w['ctrl'] * float(np.mean(a ** 2)))
+
+
+ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv}
+
+
 def main():
+    import sys
     import time
-    env = SkiCourseEnv()
+    env = ENVS[sys.argv[1] if len(sys.argv) > 1 else 'course']()
     for label, policy in (('zero', lambda: np.zeros(env.action_space.shape)),
                           ('random', lambda: env.action_space.sample())):
         obs, _ = env.reset(seed=0)
@@ -261,6 +342,7 @@ def main():
                 break
         print(f'[{label}] steps={n} return={total:.2f} reason={info["reason"]} gates={info["gates"]} '
               f'misses={info["misses"]} carve_sum={info["carve"]:.2f} '
+              f'mean|speed-cmd|={info["track"] / max(n, 1):.1f} '
               f'{n / (time.time() - t0):.1f} policy steps/s')
         print('   ', {k: round(v, 2) for k, v in sums.items()})
     print('obs dim', env.observation_space.shape, 'act dim', env.action_space.shape)
