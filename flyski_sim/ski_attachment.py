@@ -29,6 +29,7 @@ class SkiUnit:
     geoms: list = field(default_factory=list)
     half_length_cm: float = 0.
     area_cm2: float = 0.
+    sidecut_radius_cm: float = 0.     # side_plate만: 판 실제 형상에서 구한 사이드컷 반경.
 
 
 def claw_body_name(leg_id: str) -> str:

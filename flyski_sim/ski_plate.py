@@ -35,7 +35,9 @@ _THETA_MAX_EXTRA_DEG = 8.0  # stiffness=0일 때 추가로 허용하는 휨각.
 _CAMBER_DEG_PER_HINGE = 1.5
 _TARGET_OMEGA = 1000.     # 힌지 고유진동수 상한(rad/s) — physics dt(2e-4s)에서 안정.
 _HINGE_RANGE_RAD = 0.35   # 굽힘/비틀림 힌지 가동범위 ±20°.
-_BIND_RANGE_RAD = 0.8     # T2 바인딩 ball 조인트 최대 회전 ~46°.
+_BIND_RANGE_RAD = 0.8     # T2 바인딩(부츠) 앞뒤 굽힘 최대 ~46°.
+_BOOT_LATERAL_RATIO = 30.  # 부츠 옆/요 강성 = 앞뒤 강성 x 이 값.
+_BOOT_ROLL_RANGE_RAD = 0.6  # 부츠 롤 가동범위 ±34°(carving_test가 springref로 판을 세움).
 _LEG_BODY_PREFIXES = ('coxa', 'femur', 'tibia', 'tarsus', 'claw')
 
 
@@ -77,6 +79,16 @@ def _width_at(profile: SkiProfile, s: float) -> float:
     if s >= 0:
         return profile.width_waist_cm + (profile.width_tip_cm - profile.width_waist_cm) * s * s
     return profile.width_waist_cm + (profile.width_tail_cm - profile.width_waist_cm) * s * s
+
+
+def plate_sidecut_radius_cm(profile: SkiProfile, length_cm: float) -> float:
+    """판 길이와 팁/허리/테일 폭에서 구한 사이드컷 반경 R = L^2 / (8 * 사이드컷 깊이).
+
+    깊이 = ((팁 폭 + 테일 폭)/2 - 허리 폭)/2. 프로파일의 `sidecut_radius_cm`(0.45~1.1cm)는
+    옛 미니스키(길이 0.12~0.22cm) 기준 설계 상수라 지금 판(~0.4cm) 형상과 맞지 않는다.
+    """
+    depth = ((profile.width_tip_cm + profile.width_tail_cm) / 2 - profile.width_waist_cm) / 2
+    return float(length_cm ** 2 / (8 * max(depth, 1e-6)))
 
 
 def attach_side_plates(walker, profile: SkiProfile,
@@ -148,11 +160,18 @@ def attach_side_plates(walker, profile: SkiProfile,
             return body
 
         root = add_segment(t2['claw'], m, root_pos, root_quat)
-        # T2 바인딩: 발끝을 피벗으로 한 스프링 ball 조인트.
+        # T2 바인딩 = 스키 부츠: 발끝을 피벗으로 한 힌지 3개. 앞뒤(pitch)는 예전 ball
+        # 조인트 강성 그대로, 옆(roll)/요(yaw)는 _BOOT_LATERAL_RATIO배 단단하다.
+        # 스탠스에서 T1/T2/T3 발끝이 판 축 위 일직선이라 T1/T3 점 연결은 판 축 둘레
+        # 롤을 전혀 못 잡는다 → 등방 ball이면 몸을 20° 기울여도 판은 1.4°만 섰다
+        # (엣징 전달 불가, RESEARCH_NOTES 35번).
         t2_tip_plate = R_plate_w.T @ (x_c + R_c @ t2['tip_off'] - center_w)
         k_bind = 2 * k_bend * profile.attachment_compliance
-        root.add('joint', name=f'ski_bind_{side}', type='ball', pos=tuple(t2_tip_plate),
-                 **hinge_kw(k_bind, rng=(0., _BIND_RANGE_RAD)))
+        for dof, axis, ratio, rng in (('pitch', (0, 1, 0), 1., _BIND_RANGE_RAD),
+                                      ('roll', (1, 0, 0), _BOOT_LATERAL_RATIO, _BOOT_ROLL_RANGE_RAD),
+                                      ('yaw', (0, 0, 1), _BOOT_LATERAL_RATIO, _HINGE_RANGE_RAD)):
+            root.add('joint', name=f'ski_bind_{side}_{dof}', type='hinge', axis=axis,
+                     pos=tuple(t2_tip_plate), **hinge_kw(k_bind * ratio, rng=(-rng, rng)))
 
         seg_by_idx = {m: root}
         for direction in (+1, -1):
@@ -209,5 +228,6 @@ def attach_side_plates(walker, profile: SkiProfile,
 
         area = length * np.mean([_width_at(profile, (i - m) / m) for i in range(n_segments)])
         units[side] = SkiUnit(name=side, root_body=root, bodies=bodies, geoms=geoms,
-                              half_length_cm=length / 2, area_cm2=float(area))
+                              half_length_cm=length / 2, area_cm2=float(area),
+                              sidecut_radius_cm=plate_sidecut_radius_cm(profile, length))
     return units

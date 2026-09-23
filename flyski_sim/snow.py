@@ -31,6 +31,10 @@ class SnowParams:
     # (RESEARCH_NOTES 32번). 실제 스키-눈 운동마찰은 대략 0.02~0.15. 스키 geom은
     # priority=1이라 이 값이 지면 마찰보다 우선한다(tasks.py `_apply_snow_to_skis`).
     ski_friction: float = 0.05
+    # 엣지 그립 최대 계수(edge_grip.py): 엣지가 박혔을 때 횡방향으로 버티는 정도.
+    # 정설(packed)이 가장 잘 물고, 아이스는 엣지가 잘 안 박히고, 파우더/슬러시는
+    # 눈이 무너져 선반이 약하다(상대적 크기만 의미 있는 1차 근사치).
+    edge_grip: float = 0.8
 
 
 _MID_POWER = (0.5, 2.0)  # MuJoCo 기본 midpoint/power, 전 프리셋 공통.
@@ -39,23 +43,23 @@ SNOW_PRESETS: dict[str, SnowParams] = {
     # 아이스: 마찰 최저, 접촉이 거의 강체(짧은 time constant), 침투 저항 거의 없음.
     'ice': SnowParams(friction=0.15, solref=(0.001, 1.0),
                       solimp=(0.95, 0.99, 0.01) + _MID_POWER,
-                      drag_coefficient=1e-5, ski_friction=0.02),
+                      drag_coefficient=1e-5, ski_friction=0.02, edge_grip=0.3),
     # 파우더: 마찰은 낮은 편이지만 접촉이 물러서(긴 time constant) "빠지는" 느낌 — drag 최대.
     'powder': SnowParams(friction=0.40, solref=(0.02, 1.2),
                          solimp=(0.85, 0.95, 0.02) + _MID_POWER,
-                         drag_coefficient=3e-4, ski_friction=0.08),
+                         drag_coefficient=3e-4, ski_friction=0.08, edge_grip=0.5),
     # 패킹파우더: flybody Walking 기본값과 동일한 기준선.
     'packed_powder': SnowParams(friction=0.50, solref=(0.005, 1.0),
                                 solimp=(0.95, 0.99, 0.01) + _MID_POWER,
-                                drag_coefficient=4e-5, ski_friction=0.05),
+                                drag_coefficient=4e-5, ski_friction=0.05, edge_grip=0.8),
     # 크러드: 불균일 설질의 대표값(공간적 노이즈는 후속 과제, 지금은 단일 대표치).
     'crud': SnowParams(friction=0.55, solref=(0.008, 1.0),
                        solimp=(0.90, 0.96, 0.02) + _MID_POWER,
-                       drag_coefficient=1.3e-4, ski_friction=0.10),
+                       drag_coefficient=1.3e-4, ski_friction=0.10, edge_grip=0.6),
     # 슬러시: 마찰 최고(끈적함), 댐핑도 크고 drag도 중상.
     'slush': SnowParams(friction=0.75, solref=(0.01, 1.0),
                         solimp=(0.90, 0.97, 0.02) + _MID_POWER,
-                        drag_coefficient=2.2e-4, ski_friction=0.15),
+                        drag_coefficient=2.2e-4, ski_friction=0.15, edge_grip=0.4),
 }
 
 SNOW_TYPES = tuple(SNOW_PRESETS.keys())

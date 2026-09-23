@@ -13,6 +13,7 @@ from flyski_sim.ski_profiles import SkiProfile
 from flyski_sim.ski_attachment import attach_skis_to_walker
 from flyski_sim.ski_plate import attach_side_plates
 from flyski_sim.ski_stance import compute_ski_stance
+from flyski_sim.edge_grip import EdgeGrip
 from flyski_sim.snow import SNOW_PRESETS
 
 _SPAWN_CLEARANCE_CM = 0.3  # 지형 표면 위로 띄우는 여유 높이, cm.
@@ -27,8 +28,12 @@ class SlopeSmokeTask(TemplateTask):
     """
 
     def __init__(self, ski_profile: SkiProfile | None = None,
-                 ski_layout: str = 'side_plate', **kwargs):
+                 ski_layout: str = 'side_plate', edge_grip: bool = True, **kwargs):
         super().__init__(**kwargs)
+        # 엣지 박힘(카빙 그립) 현상론 모델(edge_grip.py, RESEARCH_NOTES 35번).
+        # False여도 skid/엣지각 지표는 계산한다(기준선 비교용).
+        self._edge_grip_enabled = edge_grip
+        self._grip = None
         self._ski_profile = ski_profile
         self._skis = {}
         # side_plate는 다리를 스키 스탠스로 둔 채 판을 만든다(RESEARCH_NOTES 34번).
@@ -70,6 +75,35 @@ class SlopeSmokeTask(TemplateTask):
         self._walker.set_pose(physics, position=new_pos, quaternion=quat)
         if hasattr(self._arena, 'apply_snow_friction_at'):
             self._arena.apply_snow_friction_at(physics, x)
+        if self._skis:
+            self._grip = EdgeGrip(physics, self._skis, self._snow_at,
+                                  enabled=self._edge_grip_enabled)
+
+    def _snow_at(self, x: float):
+        if hasattr(self._arena, 'get_snow_params'):
+            return self._arena.get_snow_params(x)
+        return SNOW_PRESETS['packed_powder']
+
+    def before_substep(self, physics, action, random_state):
+        super().before_substep(physics, action, random_state)
+        if self._grip is not None:
+            self._grip.step(physics)
+
+    def ski_metrics(self, physics) -> dict:
+        """직전 호출 이후 서브스텝 평균 스키 지표(좌/우 평균) 후 누적 초기화.
+
+        skid_ratio: 스키 접촉점 속도 중 판 횡방향 비율(0=카빙, 1=옆으로만 밀림).
+        edge_deg: 접촉 조각의 엣지각. grip_utilization: 그립 한계 대비 사용률(1=스키딩).
+        """
+        del physics
+        if self._grip is None:
+            return dict(skid_ratio=None, edge_deg=None, grip_utilization=None, per_ski={})
+        per = self._grip.metrics()
+        self._grip.reset_metrics()
+        on = [v for v in per.values() if v]
+        mean = (lambda k: float(np.mean([v[k] for v in on]))) if on else (lambda k: None)
+        return dict(skid_ratio=mean('skid_ratio'), edge_deg=mean('edge_deg'),
+                    grip_utilization=mean('grip_utilization'), per_ski=per)
 
     def before_step(self, physics, action, random_state: np.random.RandomState):
         # 초파리가 현재 있는 x 위치의 설질을 매 컨트롤 스텝마다 반영한다.

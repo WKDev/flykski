@@ -68,19 +68,19 @@ def check_edge_angle_manual_tilt() -> dict:
     env, task, profile = _build()
     env.reset()
     leg_id = 'left'
-    # side_plate의 T2 바인딩 ball 조인트를 직접 돌려 판 전체를 기울인다(forward만
+    # side_plate의 T2 바인딩(부츠) roll 힌지를 직접 돌려 판 전체를 기울인다(forward만
     # 하므로 T1/T3 connect 구속 위반은 텔레메트리 판독에 영향 없음).
-    jid = env.physics.model.name2id(f'walker/ski_bind_{leg_id}', 'joint')
+    jid = env.physics.model.name2id(f'walker/ski_bind_{leg_id}_roll', 'joint')
     qpos_adr = env.physics.model.jnt_qposadr[jid]
 
-    def edge_angle_for_quat(quat):
-        env.physics.data.qpos[qpos_adr:qpos_adr + 4] = quat
+    def edge_angle_for_roll(angle):
+        env.physics.data.qpos[qpos_adr] = angle
         env.physics.forward()
         t = compute_ski_telemetry(env.physics, task.walker, task.skis)
         return t.effective_edge_angle_deg[leg_id]
 
-    angle_neutral = edge_angle_for_quat((1., 0., 0., 0.))
-    angle_tilted = edge_angle_for_quat((0.866, 0.5, 0., 0.))  # 로컬 X축으로 60도 회전.
+    angle_neutral = edge_angle_for_roll(0.)
+    angle_tilted = edge_angle_for_roll(0.3)  # 로컬 X축으로 ~17도(힌지 가동범위 안).
 
     return {
         'edge_angle_neutral_deg': round(angle_neutral, 2),
