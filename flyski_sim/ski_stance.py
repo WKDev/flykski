@@ -92,3 +92,75 @@ def compute_ski_stance(walker) -> dict[str, float]:
             stance.update({n: float(v) for n, v in zip(names, sol.x)})
     _cache[key] = stance
     return stance
+
+
+def _rot(axis: str, angle: float) -> np.ndarray:
+    c, s = np.cos(angle), np.sin(angle)
+    if axis == 'x':
+        return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def solve_plate_pose(walker, yaw_deg: dict[str, float], roll_deg: dict[str, float],
+                     ori_weight: float = 0.05) -> tuple[dict[str, float], dict[str, float]]:
+    """스탠스에서 판을 T2 발끝 기준으로 요(수직축)/롤(판 축)만큼 돌린 다리 자세를 IK로 구한다.
+
+    yaw_deg/roll_deg: {'left': 각, 'right': 각}. 요 +는 반시계(팁이 왼쪽으로), 롤 +는
+    오른쪽 엣지가 내려감. 플루크(쐐기)는 left 요 -, right 요 +(팁을 모음), left 롤 +,
+    right 롤 -(안쪽 엣지). T1/T3는 발끝 위치만, T2는 발끝 위치 + 발(부츠) 방향까지
+    맞춘다(부츠 요/롤 힌지가 단단해서 T2 발이 판과 같이 안 돌면 스프링과 싸움).
+    반환: ({관절: 각}, {다리: 발끝 위치 오차 cm, T2는 방향 오차 rad도 'T2_side_ori'}).
+    """
+    physics = mjcf.Physics.from_mjcf_model(walker.mjcf_model)
+    stance = compute_ski_stance(walker)
+    for name, angle in stance.items():
+        physics.named.data.qpos[name] = angle
+    physics.forward()
+    tips0 = _tips_th(physics, walker)
+    th = physics.model.name2id('thorax', 'body')
+    R_th = physics.data.xmat[th].reshape(3, 3).copy()
+    claw_R0 = {}
+    for side in SIDES:
+        bid = physics.model.name2id(f'claw_T2_{side}', 'body')
+        claw_R0[side] = R_th.T @ physics.data.xmat[bid].reshape(3, 3)
+    pose, errors = dict(stance), {}
+    for side in SIDES:
+        R_delta = _rot('z', np.deg2rad(yaw_deg[side])) @ _rot('x', np.deg2rad(roll_deg[side]))
+        pivot = tips0[f'T2_{side}']
+        for leg in LEGS:
+            names = [f'{j}_{leg}_{side}' for j in _MAIN_JOINTS]
+            jids = [physics.model.name2id(n, 'joint') for n in names]
+            qadr = physics.model.jnt_qposadr[jids]
+            lo, hi = physics.model.jnt_range[jids].T
+            target = pivot + R_delta @ (tips0[f'{leg}_{side}'] - pivot)
+            bid = physics.model.name2id(f'claw_{leg}_{side}', 'body')
+            R_goal = R_delta @ claw_R0[side] if leg == 'T2' else None
+
+            def residual(q):
+                physics.data.qpos[qadr] = q
+                physics.forward()
+                err = _tips_th(physics, walker)[f'{leg}_{side}'] - target
+                out = [err]
+                if R_goal is not None:
+                    R = R_th.T @ physics.data.xmat[bid].reshape(3, 3)
+                    E = R_goal.T @ R
+                    out.append(ori_weight * 0.5 * np.array([E[2, 1] - E[1, 2], E[0, 2] - E[2, 0],
+                                                           E[1, 0] - E[0, 1]]))
+                out.append(_REG * (q - np.array([stance[n] for n in names])))
+                return np.concatenate(out)
+
+            q0 = np.array([stance[n] for n in names])
+            sol = least_squares(residual, q0, bounds=(lo, hi), xtol=1e-12, ftol=1e-12)
+            r = residual(sol.x)
+            errors[f'{leg}_{side}'] = float(np.linalg.norm(r[:3]))
+            if R_goal is not None:
+                errors[f'T2_{side}_ori'] = float(np.linalg.norm(r[3:6]) / ori_weight)
+            pose.update({n: float(v) for n, v in zip(names, sol.x)})
+            physics.data.qpos[qadr] = sol.x
+    return pose, errors
+
+
+def snowplow_pose(walker, wedge_deg: float, edge_deg: float):
+    """플루크(쐐기): 팁을 모으고(각 판 wedge_deg) 안쪽 엣지를 edge_deg만큼 세운 자세."""
+    return solve_plate_pose(walker, {'left': -wedge_deg, 'right': wedge_deg},
+                            {'left': edge_deg, 'right': -edge_deg})
