@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import mujoco
 import numpy as np
 from dm_control import composer
 from dm_control.locomotion.arenas import floors
@@ -138,8 +139,11 @@ def check_side_plate_physics(profile_name: str = 'all_mountain', n_steps: int = 
         if 'ski_bind_' not in name:
             continue
         b1, b2 = p.model.eq_obj1id[i], p.model.eq_obj2id[i]
-        a1 = p.data.xpos[b1] + p.data.xmat[b1].reshape(3, 3) @ p.model.eq_data[i, 0:3]
-        a2 = p.data.xpos[b2] + p.data.xmat[b2].reshape(3, 3) @ p.model.eq_data[i, 3:6]
+        if p.model.eq_objtype[i] == mujoco.mjtObj.mjOBJ_SITE:   # site 기반 connect.
+            a1, a2 = p.data.site_xpos[b1], p.data.site_xpos[b2]
+        else:
+            a1 = p.data.xpos[b1] + p.data.xmat[b1].reshape(3, 3) @ p.model.eq_data[i, 0:3]
+            a2 = p.data.xpos[b2] + p.data.xmat[b2].reshape(3, 3) @ p.model.eq_data[i, 3:6]
         bind_err[name.split('/')[-1]] = float(np.linalg.norm(a1 - a2))
 
     bend = [abs(float(p.bind(j).qpos[0])) for u in task.skis.values() for b in u.bodies

@@ -12,6 +12,7 @@ from flybody.tasks.template_task import TemplateTask
 from flyski_sim.ski_profiles import SkiProfile
 from flyski_sim.ski_attachment import attach_skis_to_walker
 from flyski_sim.ski_plate import attach_side_plates
+from flyski_sim.ski_stance import compute_ski_stance
 from flyski_sim.snow import SNOW_PRESETS
 
 _SPAWN_CLEARANCE_CM = 0.3  # 지형 표면 위로 띄우는 여유 높이, cm.
@@ -30,8 +31,14 @@ class SlopeSmokeTask(TemplateTask):
         super().__init__(**kwargs)
         self._ski_profile = ski_profile
         self._skis = {}
+        # side_plate는 다리를 스키 스탠스로 둔 채 판을 만든다(RESEARCH_NOTES 34번).
+        # 다리 액추에이터는 position servo(ctrl = 목표 관절각)라서, 액션을 그대로 쓰면
+        # zero action이 기본 자세(0rad)로 다리를 당겨 판과 싸운다 → 다리 액션은
+        # "스탠스 대비 오프셋"으로 해석한다(zero action = 스탠스 유지).
+        self._stance = {}
         if ski_profile is not None:
             if ski_layout == 'side_plate':
+                self._stance = compute_ski_stance(self._walker)
                 self._skis = attach_side_plates(self._walker, ski_profile)
             elif ski_layout == 'per_leg':
                 self._skis = attach_skis_to_walker(self._walker, ski_profile)
@@ -57,6 +64,8 @@ class SlopeSmokeTask(TemplateTask):
             terrain_h = self._arena.height_at(x, y)
         else:
             terrain_h = 0.
+        for name, angle in self._stance.items():
+            physics.named.data.qpos[f'walker/{name}'] = angle
         new_pos = (x, y, terrain_h + _SPAWN_CLEARANCE_CM)
         self._walker.set_pose(physics, position=new_pos, quaternion=quat)
         if hasattr(self._arena, 'apply_snow_friction_at'):
@@ -69,6 +78,20 @@ class SlopeSmokeTask(TemplateTask):
             self._arena.apply_snow_friction_at(physics, float(pos[0]))
         self._apply_snow_to_skis(physics)
         super().before_step(physics, action, random_state)
+        if self._stance:
+            ids, offs = self._stance_ctrl(physics)
+            lo, hi = physics.model.actuator_ctrlrange[ids].T
+            physics.data.ctrl[ids] = np.clip(physics.data.ctrl[ids] + offs, lo, hi)
+
+    def _stance_ctrl(self, physics):
+        """(액추에이터 id 배열, 스탠스 관절각 배열). 관절 이름 = 액추에이터 이름."""
+        if not hasattr(self, '_stance_ctrl_cache'):
+            names = [physics.model.id2name(i, 'actuator') for i in range(physics.model.nu)]
+            pairs = [(i, self._stance[n.split('/')[-1]]) for i, n in enumerate(names)
+                     if n and n.split('/')[-1] in self._stance]
+            self._stance_ctrl_cache = (np.array([i for i, _ in pairs]),
+                                       np.array([a for _, a in pairs]))
+        return self._stance_ctrl_cache
 
     def _apply_snow_to_skis(self, physics) -> None:
         """스키 조각마다 그 위치 설질의 ski_friction + 속도비례 항력을 적용한다."""

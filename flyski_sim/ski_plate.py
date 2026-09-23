@@ -6,7 +6,8 @@ RESEARCH_NOTES.md 32번. 기존 N=6(다리당 미니스키, `ski_attachment.py`)
 
 구조(한쪽 기준):
 - 판 = 긴 축 방향 K개 조각의 체인. 가운데(root) 조각이 T2 발끝(claw tip)에 스프링
-  ball 조인트로 붙는다(피벗 = 발끝).
+  ball 조인트로 붙는다(피벗 = 발끝). 판 중심 = T2 발끝(RESEARCH_NOTES 34번): 다리를
+  세 발끝이 일직선인 "스키 스탠스"(`ski_stance.py`)로 두고 그 자세에서 판을 만든다.
 - T1/T3 발끝은 가장 가까운 조각에 **soft `connect` 등식 구속**(점 연결, 회전 자유)으로
   붙는다. 세 점이 판의 평면을 정하되 rigid weld가 아니라서 과구속이 아니다
   (RESEARCH_NOTES 7번에서 폐기된 건 "3다리 rigid weld"였다).
@@ -14,7 +15,7 @@ RESEARCH_NOTES.md 32번. 기존 N=6(다리당 미니스키, `ski_attachment.py`)
   "체중 절반이 걸렸을 때 몇 도 휘는가"로 역산한다 — 초파리 스케일이라 실제 스키
   재료 강성을 그대로 쓰면 사실상 안 휜다. 캠버/로커는 굽힘 힌지의 springref로,
   사이드컷은 조각별 폭으로 표현한다.
-- 판 축은 rest pose(qpos0)에서 T3→T1 발끝을 잇는 선 방향, 판 윗면은 발끝 높이.
+- 판 축은 스키 스탠스에서 T3→T1 발끝을 잇는 선 방향, 판 윗면은 발끝 높이.
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ from dm_control import mjcf
 
 from flyski_sim.ski_attachment import SkiUnit, _find_claw_tip_offset
 from flyski_sim.ski_profiles import SkiProfile
+from flyski_sim.ski_stance import compute_ski_stance
 
 SIDES = ('left', 'right')
 N_SEGMENTS = 7            # 홀수 — 가운데 조각이 root.
@@ -43,9 +45,13 @@ def _mat_to_quat(R: np.ndarray) -> np.ndarray:
     return q
 
 
-def _rest_pose_info(walker):
-    """qpos0에서 thorax 기준 발끝 위치, claw 월드 포즈를 독립 컴파일로 구한다."""
+def _rest_pose_info(walker, joint_angles: dict[str, float] | None = None):
+    """qpos0(+joint_angles로 덮어쓴 관절)에서 thorax 기준 발끝 위치, claw 월드 포즈를
+    독립 컴파일로 구한다."""
     physics = mjcf.Physics.from_mjcf_model(walker.mjcf_model)
+    for name, angle in (joint_angles or {}).items():
+        physics.named.data.qpos[name] = angle
+    physics.forward()
     th = physics.model.name2id('thorax', 'body')
     R_th = physics.data.xmat[th].reshape(3, 3).copy()
     x_th = physics.data.xpos[th].copy()
@@ -76,7 +82,7 @@ def _width_at(profile: SkiProfile, s: float) -> float:
 def attach_side_plates(walker, profile: SkiProfile,
                        n_segments: int = N_SEGMENTS) -> dict[str, SkiUnit]:
     """walker의 좌/우 다리 3개씩에 휘는 스키 플레이트를 하나씩 붙인다."""
-    info, R_th, x_th, weight = _rest_pose_info(walker)
+    info, R_th, x_th, weight = _rest_pose_info(walker, compute_ski_stance(walker))
     model = walker.mjcf_model
     units = {}
     for side in SIDES:
@@ -90,7 +96,9 @@ def attach_side_plates(walker, profile: SkiProfile,
         ey = np.cross(ez, ex)
         R_plate_th = np.stack([ex, ey, ez], axis=1)         # plate -> thorax
         tip_z = np.mean([t['tip_th'][2] for t in (t1, t2, t3)])
-        mid = 0.5 * (t1['tip_th'] + t3['tip_th'])
+        # 판 중심 = T2 발끝(가운데 다리 하중이 판 한가운데를 누르도록). 예전엔 T1/T3
+        # 중점이라 T2가 판 옆 0.077cm(판 폭 밖)에 있었다(RESEARCH_NOTES 34번).
+        mid = t2['tip_th']
         # 판 윗면을 발끝보다 BINDING_HEIGHT_CM 아래에 둔다(부츠/바인딩 높이). 발톱-판
         # 충돌은 exclude라서, 바인딩이 조금만 처져도 발톱이 판을 통과해 눈(마찰 1.0)에
         # 닿아 브레이크가 걸렸다(RESEARCH_NOTES 32번).
@@ -179,9 +187,16 @@ def attach_side_plates(walker, profile: SkiProfile,
         for leg, t in (('T1', t1), ('T3', t3)):
             tip_plate = R_plate_w.T @ (t['x'] + t['R'] @ t['tip_off'] - center_w)
             idx = int(np.clip(m + round(float(tip_plate[0]) / seg_len), 0, n_segments - 1))
+            # site 기반 connect: body1+anchor 방식은 판 쪽 anchor를 qpos0(기본 자세)에서
+            # 자동 계산해서, 스키 스탠스로 만든 판을 기본 자세 발끝 쪽으로 끌어당겼다
+            # (판 코가 들리고 앞발이 눈에 박힘, RESEARCH_NOTES 34번).
+            site_foot = t['claw'].add('site', name=f'ski_bind_foot_{leg}_{side}',
+                                      pos=tuple(t['tip_off']), size=(0.002,), group=5)
+            site_plate = seg_by_idx[idx].add(
+                'site', name=f'ski_bind_plate_{leg}_{side}', size=(0.002,), group=5,
+                pos=tuple(tip_plate - np.array([(idx - m) * seg_len, 0., 0.])))
             model.equality.add('connect', name=f'ski_bind_{leg}_{side}',
-                               body1=t['claw'], body2=seg_by_idx[idx],
-                               anchor=tuple(t['tip_off']), solref=(timeconst, 1.0))
+                               site1=site_foot, site2=site_plate, solref=(timeconst, 1.0))
             add_binding_post(leg, idx, tip_plate)
 
         # 같은 쪽 다리 몸체와 판의 충돌은 제외(바인딩/다리가 판을 밀어내지 않게).
