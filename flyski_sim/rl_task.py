@@ -34,7 +34,10 @@ CONTROL_DT = 0.01            # 정책 주기(s). 물리 2e-4 x 50 서브스텝.
 ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
                              # 최대 0.78rad 움직여야 해서 커리큘럼 단계는 1.0을 쓴다.
 EPISODE_SECONDS = 3.0
-COURSE = dict(dim=(60., 8.), slope_deg=15., gate_spacing=8., gate_amplitude=3.,
+# 코스(반길이, 반폭) cm. 41번에 60x8, 사용자 요청으로 200x50(400cm x 100cm)으로 크게.
+# 격자는 cm당 15점 유지: 평면이어도 2점(0.5cm 칸)이면 판 조각(0.06cm)보다 칸이 커서 접촉이
+# 들쭉날쭉해져 전문가가 코스를 벗어났다. 15점(격자 900만 개)도 생성 7초라 괜찮음(41번).
+COURSE = dict(dim=(200., 50.), grid_density=15, slope_deg=15., gate_spacing=8., gate_amplitude=3.,
               pass_radius=1.5, spawn_margin=2.)
 
 REWARD_WEIGHTS = dict(
@@ -56,7 +59,7 @@ class SkiCourseTask(SlopeSmokeTask):
     def __init__(self, profile: str = 'all_mountain', seed: int = 0):
         c = COURSE
         arena = SlopedMoguls(dim=c['dim'], mean_slope_deg=c['slope_deg'], terrain_type='alpine',
-                             mogul_height=0., grid_density=15)
+                             mogul_height=0., grid_density=c['grid_density'])
         super().__init__(ski_profile=SKI_PROFILES[profile], walker=fruitfly.FruitFly,
                          arena=arena, time_limit=EPISODE_SECONDS, joint_filter=0.,
                          claw_friction=1.0, spawn_xy=(-c['dim'][0] + c['spawn_margin'], 0.))
