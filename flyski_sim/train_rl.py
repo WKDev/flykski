@@ -3,6 +3,7 @@
 
     python -m flyski_sim.train_rl --minutes 35 --envs 10                  # 코스(게이트/카빙)
     python -m flyski_sim.train_rl --stage speed --log-std -2 --name speed1 # 커리큘럼 1단계(정지/출발)
+    python -m flyski_sim.train_rl --stage speed --bc-episodes 40 --name speed3  # 플루크 전문가 모방 후 PPO
 
 제대로 된 학습이 아니라 "파이프라인이 돌고 보상이 오르는가"만 본다. 결과는 runs/<이름>/:
 progress.csv(롤아웃마다 평균 에피소드 보상/게이트/카빙), model.zip, curve.png,
@@ -73,6 +74,69 @@ class LogCallback:
         self.buf = []
 
 
+def _collect_expert(args):
+    """워커: 플루크 전문가 시범 수집. 실행은 노이즈 섞은 액션, 기록은 전문가 액션(DART)."""
+    stage, seed, n_eps, table, noise = args
+    from flyski_sim.experts import SnowplowExpert
+    from flyski_sim.rl_task import ENVS
+    env = ENVS[stage](seed=seed)
+    expert = SnowplowExpert(env, table)
+    rng = np.random.RandomState(seed)
+    obs_l, act_l, rets = [], [], []
+    for ep in range(n_eps):
+        obs, _ = env.reset(seed=seed * 1000 + ep)
+        total = 0.
+        while True:
+            a = expert(obs)
+            obs_l.append(obs)
+            act_l.append(a)
+            obs, r, term, trunc, _ = env.step(np.clip(a + noise * rng.randn(*a.shape), -1, 1))
+            total += r
+            if term or trunc:
+                break
+        rets.append(total)
+    return np.array(obs_l, np.float32), np.array(act_l, np.float32), rets
+
+
+def collect_expert(stage, n_eps, n_workers, out, noise=0.1):
+    """플루크 전문가 시범을 병렬 수집(학습 워커를 띄우기 전에 끝낸다, 메모리)."""
+    import multiprocessing as mp
+    from flyski_sim.experts import build_table
+    from flyski_sim.rl_task import ENVS
+    table = build_table(ENVS[stage](seed=0))
+    per = max(n_eps // n_workers, 1)
+    with mp.get_context('spawn').Pool(n_workers) as pool:
+        parts = pool.map(_collect_expert, [(stage, 100 + i, per, table, noise) for i in range(n_workers)])
+    obs = np.concatenate([o for o, _, _ in parts])
+    act = np.concatenate([a for _, a, _ in parts])
+    rets = [r for _, _, rr in parts for r in rr]
+    print(f'BC data: {len(obs)} samples from {len(rets)} expert episodes, expert return {np.mean(rets):.1f}',
+          flush=True)
+    np.savez_compressed(os.path.join(out, 'bc_data.npz'), obs=obs, act=act)
+    return obs, act
+
+
+def behavior_clone(model, obs, act, epochs=30):
+    """전문가 시범으로 PPO 정책 평균을 지도학습(MSE)해 워밍업한다."""
+    import torch
+    pol = model.policy
+    opt = torch.optim.Adam(pol.parameters(), lr=1e-3)
+    o_t, a_t = torch.as_tensor(obs), torch.as_tensor(act)
+    for ep in range(epochs):
+        perm = torch.randperm(len(o_t))
+        losses = []
+        for i in range(0, len(o_t), 256):
+            idx = perm[i:i + 256]
+            mean = pol.get_distribution(o_t[idx]).distribution.mean
+            loss = ((mean - a_t[idx]) ** 2).mean()
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            losses.append(loss.item())
+        if ep % 10 == 0 or ep == epochs - 1:
+            print(f'BC epoch {ep} mse {np.mean(losses):.4f}', flush=True)
+
+
 def rollout_gif(env, policy, path, every=3):
     from PIL import Image
     obs, _ = env.reset(seed=123)
@@ -124,6 +188,8 @@ def main():
     ap.add_argument('--envs', type=int, default=10)
     ap.add_argument('--name', default='ppo_try1')
     ap.add_argument('--stage', default='course', choices=('course', 'speed'))
+    ap.add_argument('--bc-episodes', type=int, default=0,
+                    help='>0이면 플루크 전문가 시범으로 행동 복제 워밍업 후 PPO(speed 단계)')
     ap.add_argument('--log-std', type=float, default=-1.0,
                     help='초기 탐색 노이즈 log 표준편차(액션 범위 1.0rad인 speed 단계는 -2 권장)')
     args = ap.parse_args()
@@ -136,10 +202,26 @@ def main():
 
     out = os.path.join(RUNS, args.name)
     os.makedirs(out, exist_ok=True)
+    if args.bc_episodes:
+        bc_obs, bc_act = collect_expert(args.stage, args.bc_episodes, args.envs, out)
     venv = SubprocVecEnv([make_env(i, args.stage) for i in range(args.envs)])
     model = PPO('MlpPolicy', venv, n_steps=256, batch_size=640, n_epochs=5, learning_rate=3e-4,
                 gamma=0.99, gae_lambda=0.95, clip_range=0.2,
                 policy_kwargs=dict(net_arch=[256, 256], log_std_init=args.log_std), verbose=0, seed=0)
+    if args.bc_episodes:
+        behavior_clone(model, bc_obs, bc_act)
+        env = ENVS[args.stage](seed=7)
+        for ep in range(3):
+            obs, _ = env.reset(seed=ep)
+            tot, n = 0., 0
+            while True:
+                obs, r, term, trunc, info = env.step(model.predict(obs, deterministic=True)[0])
+                tot += r
+                n += 1
+                if term or trunc:
+                    break
+            print(f'[BC policy] ep{ep} return={tot:.1f} steps={n} reason={info["reason"]} '
+                  f'mean|speed-cmd|={info["track"] / n:.1f}', flush=True)
     log = LogCallback(os.path.join(out, 'progress.csv'), time.time() + 60 * args.minutes)
     model.learn(total_timesteps=10 ** 8, callback=log.cb)
     log.flush(model.num_timesteps)
