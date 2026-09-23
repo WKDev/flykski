@@ -424,7 +424,48 @@ class TurnTrackEnv(SpeedControlEnv):
         return reason
 
 
-ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv, 'turn': TurnTrackEnv}
+PARALLEL_BONUS = 0.4
+PARALLEL_MAX_WEDGE_DEG = 5.
+PARALLEL_MIN_EDGE_DEG = 1.5
+PARALLEL_TURN_HEADING_DEG = 10.   # 목표 진행각이 이보다 클 때(S자의 꺾이는 구간)만 판정.
+
+
+class ParallelTrackEnv(TurnTrackEnv):
+    """커리큘럼 3단계(패럴렐 턴): TurnTrackEnv + 패럴렐 자세 보상.
+
+    패럴렐 = S자의 꺾이는 구간(목표 진행각 > 10°)에서 두 판 방향 차 < 5°이고 두 판 엣지가
+    같은 쪽(부호 같음, 각 1.5° 이상). 직진 구간에선 두 판이 안쪽 엣지로 살짝 선(A자) 게
+    정상이라 판정하지 않는다. stats['carve']에 패럴렐 스텝 수를, stats['turn_steps']에
+    판정 대상 스텝 수를 누적한다(로그 carve 칸 = 패럴렐 스텝 수).
+    """
+
+    def _plate_state(self, p):
+        n = self.task._slope_n
+        yaws, edges = [], []
+        for b in self._roots:
+            R = p.data.xmat[b].reshape(3, 3)
+            yaws.append(np.arctan2(R[1, 0], R[0, 0]))
+            edges.append(np.arctan2(R[:, 1] @ n, R[:, 2] @ n))
+        wedge = abs(float(np.angle(np.exp(1j * (yaws[0] - yaws[1])))))
+        return wedge, edges
+
+    def _task_reward(self, p, a, metrics, odor):
+        parts = super()._task_reward(p, a, metrics, odor)
+        x = float(p.data.xpos[self._th][0])
+        if abs(self.reference.heading(x)) < np.deg2rad(PARALLEL_TURN_HEADING_DEG):
+            parts['parallel'] = 0.
+            return parts
+        wedge, (e_l, e_r) = self._plate_state(p)
+        parallel = (wedge < np.deg2rad(PARALLEL_MAX_WEDGE_DEG) and np.sign(e_l) == np.sign(e_r)
+                    and min(abs(e_l), abs(e_r)) > np.deg2rad(PARALLEL_MIN_EDGE_DEG))
+        parts['parallel'] = PARALLEL_BONUS * float(parallel)
+        self._stats['carve'] += float(parallel)
+        self._stats['turn_steps'] = self._stats.get('turn_steps', 0) + 1
+        return parts
+
+
+ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv, 'turn': TurnTrackEnv,
+        'parallel': ParallelTrackEnv}
 
 
 def main():

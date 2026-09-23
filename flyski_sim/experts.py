@@ -102,6 +102,34 @@ class SteerExpert:
         return (1 - t) * self.table[a0] + t * self.table[a1]
 
 
+# ---- 패럴렐 턴 전문가 ----
+# 두 판을 11자로 두고 같은 쪽 엣지로 동시에 세운다(바깥 판은 안쪽 엣지, 안쪽 판은 바깥
+# 엣지). 무게중심은 바깥 판 쪽으로. 쐐기 0에서 두 판을 오른쪽 엣지로 세우면 우회전
+# (요 -35°), 왼쪽 엣지면 좌회전(+54°), 사람과 같은 방향(RESEARCH_NOTES 40번).
+PARALLEL_EDGE_DEG = 15.
+PARALLEL_COM_CM = 0.04
+
+
+def build_parallel_table(env) -> dict:
+    table = {}
+    for u in STEER_US:
+        roll = -PARALLEL_EDGE_DEG * u                   # u>0(좌회전): 두 판 왼쪽 엣지(롤 -).
+        shift = -np.array([0., -PARALLEL_COM_CM * u, 0.])   # u>0: 몸을 바깥(오른쪽) 판 쪽으로.
+        pose, _ = solve_plate_pose(env.task.walker, {'left': 0., 'right': 0.},
+                                   {'left': roll, 'right': roll}, shift_cm={'left': shift, 'right': shift})
+        off = np.array([pose[n] - env._stance_q[i] for i, n in enumerate(env._leg_names)])
+        table[float(u)] = np.clip(off / env._action_scale, -1., 1.)
+    return table
+
+
+class ParallelExpert(SteerExpert):
+    """SteerExpert와 같은 되먹임, 자세 표만 패럴렐(두 판 같은 쪽 엣지)."""
+
+    def __init__(self, env, table: dict | None = None):
+        super().__init__(env, table if table is not None else build_parallel_table(env))
+
+
 def expert_for(stage: str):
     """단계별 (표 생성 함수, 전문가 클래스)."""
-    return {'speed': (build_table, SnowplowExpert), 'turn': (build_steer_table, SteerExpert)}[stage]
+    return {'speed': (build_table, SnowplowExpert), 'turn': (build_steer_table, SteerExpert),
+            'parallel': (build_parallel_table, ParallelExpert)}[stage]

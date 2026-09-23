@@ -187,7 +187,8 @@ def main():
     ap.add_argument('--minutes', type=float, default=35.)
     ap.add_argument('--envs', type=int, default=10)
     ap.add_argument('--name', default='ppo_try1')
-    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn'))
+    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn', 'parallel'))
+    ap.add_argument('--init', default=None, help='앞 단계 model.zip 가중치로 시작(커리큘럼)')
     ap.add_argument('--bc-episodes', type=int, default=0,
                     help='>0이면 플루크 전문가 시범으로 행동 복제 워밍업 후 PPO(speed 단계)')
     ap.add_argument('--log-std', type=float, default=-1.0,
@@ -208,6 +209,10 @@ def main():
     model = PPO('MlpPolicy', venv, n_steps=256, batch_size=640, n_epochs=5, learning_rate=3e-4,
                 gamma=0.99, gae_lambda=0.95, clip_range=0.2,
                 policy_kwargs=dict(net_arch=[256, 256], log_std_init=args.log_std), verbose=0, seed=0)
+    if args.init:
+        prev = PPO.load(args.init, device='cpu')
+        model.policy.load_state_dict(prev.policy.state_dict())
+        print(f'init from {args.init}', flush=True)
     if args.bc_episodes:
         behavior_clone(model, bc_obs, bc_act)
         env = ENVS[args.stage](seed=7)
