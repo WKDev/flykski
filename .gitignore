@@ -19,3 +19,7 @@ flybody-data/
 # R
 .Rhistory
 .RData
+
+# RL 학습 산출물 중 큰 파일(롤아웃 GIF ~20MB, 로그)은 로컬에만 둔다.
+runs/*/*.gif
+runs/*.log
