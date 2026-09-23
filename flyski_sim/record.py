@@ -45,9 +45,9 @@ def make_policy(env, controller, model_path=None):
         from stable_baselines3 import PPO
         model = PPO.load(model_path, device='cpu')
         return _compat(model, env)
-    if controller == 'steer':
-        from flyski_sim.experts import SteerExpert
-        return SteerExpert(env)
+    if controller in ('steer', 'parallel'):
+        from flyski_sim.experts import ParallelExpert, SteerExpert
+        return (SteerExpert if controller == 'steer' else ParallelExpert)(env)
     if controller == 'expert':
         from flyski_sim.experts import SnowplowExpert
         return SnowplowExpert(env)
@@ -107,7 +107,7 @@ def main():
     warnings.filterwarnings('ignore')
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', default='turn', choices=tuple(ENVS))
-    ap.add_argument('--controller', default='steer', choices=('steer', 'expert', 'zero'))
+    ap.add_argument('--controller', default='steer', choices=('steer', 'parallel', 'expert', 'zero'))
     ap.add_argument('--model', default=None)
     ap.add_argument('--name', required=True)
     ap.add_argument('--seconds', type=float, default=None)

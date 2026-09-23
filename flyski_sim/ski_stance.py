@@ -24,7 +24,14 @@ _MAIN_JOINTS = ('coxa_abduct', 'coxa_twist', 'coxa', 'femur_twist', 'femur', 'ti
 _REG = 0.003           # 관절각 크기 정규화(해가 여럿일 때 기본 자세에 가까운 쪽).
 _MAX_TIP_ERR_CM = 0.005
 
-_cache: dict[int, dict[str, float]] = {}
+# 스탠스 폭 배율: 판 중심선의 옆 위치 = 세 발끝 평균 y x 이 값. 1이면 초파리 다리가 벌어진
+# 그대로(판 사이 ~0.25cm, 몸통보다 훨씬 넓음). 패럴렐은 좁게(RESEARCH_NOTES 41번). 다리는
+# 안쪽으로 ~0.05cm까지 옮길 수 있어 0.6 정도가 하한.
+STANCE_WIDTH_SCALE = 1.0
+# 토인: 판 팁을 안쪽으로 돌리는 각(°). 팁이 바깥(토아웃)이면 사면 하중에서 방향이 발산했다.
+TOE_IN_DEG = 0.0
+
+_cache: dict[tuple, dict[str, float]] = {}
 
 
 def _tips_th(physics, walker):
@@ -52,17 +59,26 @@ def stance_targets(walker) -> dict[str, np.ndarray]:
     targets = {}
     for side in SIDES:
         t1, t2, t3 = (tips[f'{l}_{side}'] for l in LEGS)
-        y = float(np.mean([t1[1], t2[1], t3[1]]))
+        y = STANCE_WIDTH_SCALE * float(np.mean([t1[1], t2[1], t3[1]]))
         z = float(np.mean([t1[2], t2[2], t3[2]]))
         half = 0.5 * float(t1[0] - t3[0])
+        inward = -np.sign(y)                               # 몸 중심 쪽 y 방향.
+        toe = np.deg2rad(TOE_IN_DEG)
         for leg, dx in (('T1', half), ('T2', 0.), ('T3', -half)):
-            targets[f'{leg}_{side}'] = np.array([com_x + dx, y, z])
+            # 토인: T2 기준으로 판 축을 돌려 T1(앞)은 안쪽, T3(뒤)는 바깥으로.
+            targets[f'{leg}_{side}'] = np.array([com_x + dx * np.cos(toe),
+                                                 y + inward * dx * np.sin(toe), z])
     return targets
 
 
 def compute_ski_stance(walker) -> dict[str, float]:
-    """{관절 이름(접두어 없음): 각도 rad}. 같은 walker 객체면 캐시."""
-    key = id(walker)
+    """{관절 이름(접두어 없음): 각도 rad}. 같은 walker 객체 + 같은 파라미터면 캐시.
+
+    좌우를 따로 푼 뒤 관절별로 평균해 좌우 대칭으로 맞춘다(flybody는 좌우 관절축이 같아
+    같은 값이면 거울 대칭 자세). 따로 풀면 0.01~0.02rad씩 달라 사면 하중에서 판 요가
+    좌우 비대칭(0.87° vs -0.43°)이 됐다.
+    """
+    key = (id(walker), STANCE_WIDTH_SCALE, TOE_IN_DEG)
     if key in _cache:
         return _cache[key]
     physics = mjcf.Physics.from_mjcf_model(walker.mjcf_model)
@@ -90,6 +106,10 @@ def compute_ski_stance(walker) -> dict[str, float]:
                 raise RuntimeError(f'ski stance IK failed for {leg}_{side}: '
                                    f'tip error {tip_err:.4f}cm')
             stance.update({n: float(v) for n, v in zip(names, sol.x)})
+    for name in [n for n in stance if n.endswith('_left')]:
+        other = name[:-len('left')] + 'right'
+        avg = 0.5 * (stance[name] + stance[other])
+        stance[name] = stance[other] = avg
     _cache[key] = stance
     return stance
 

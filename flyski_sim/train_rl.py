@@ -33,10 +33,12 @@ def make_env(rank: int, stage: str):
 class LogCallback:
     """롤아웃이 끝날 때마다 최근 에피소드 통계를 CSV에 쓰고 시간 예산을 넘기면 멈춘다."""
 
-    def __init__(self, path, deadline):
+    def __init__(self, path, deadline, save_every_min=10.):
         from stable_baselines3.common.callbacks import BaseCallback
 
         outer = self
+        self.save_every = 60 * save_every_min
+        self.last_save = time.time()
 
         class _CB(BaseCallback):
             def _on_step(self):
@@ -51,6 +53,10 @@ class LogCallback:
 
             def _on_rollout_end(self):
                 outer.flush(self.num_timesteps)
+                # 학습 도중에도 play로 볼 수 있게 주기적으로 최신 모델 저장.
+                if time.time() - outer.last_save > outer.save_every:
+                    self.model.save(os.path.join(os.path.dirname(outer.path), 'model_latest.zip'))
+                    outer.last_save = time.time()
 
         self.cb = _CB()
         self.buf = []

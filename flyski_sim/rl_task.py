@@ -24,6 +24,7 @@ from dm_control import composer
 from dm_control.rl.control import PhysicsError
 
 from flybody.fruitfly import fruitfly
+from flyski_sim import ski_stance
 from flyski_sim.odor import OdorField
 from flyski_sim.ski_profiles import SKI_PROFILES
 from flyski_sim.tasks import SlopeSmokeTask
@@ -33,7 +34,7 @@ CONTROL_DT = 0.01            # 정책 주기(s). 물리 2e-4 x 50 서브스텝.
 ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
                              # 최대 0.78rad 움직여야 해서 커리큘럼 단계는 1.0을 쓴다.
 EPISODE_SECONDS = 3.0
-COURSE = dict(dim=(30., 8.), slope_deg=15., gate_spacing=8., gate_amplitude=3.,
+COURSE = dict(dim=(60., 8.), slope_deg=15., gate_spacing=8., gate_amplitude=3.,
               pass_radius=1.5, spawn_margin=2.)
 
 REWARD_WEIGHTS = dict(
@@ -86,9 +87,15 @@ class SkiCourseEnv(gym.Env):
     metadata = {'render_modes': ['rgb_array']}
 
     episode_seconds = EPISODE_SECONDS
+    # 단계별 스탠스 폭 배율(None이면 ski_stance 기본값). 판은 태스크 생성 때 스탠스로 만들어지고
+    # 전문가 IK도 같은 값을 써야 해서 프로세스 전역값(ski_stance.STANCE_WIDTH_SCALE)을 바꾼다.
+    # 한 프로세스에서 폭이 다른 환경을 섞어 만들면 안 된다(학습 워커는 환경 하나씩이라 괜찮음).
+    stance_width = None
 
     def __init__(self, profile: str = 'all_mountain', seed: int = 0,
                  action_scale: float = ACTION_SCALE):
+        if self.stance_width is not None:
+            ski_stance.STANCE_WIDTH_SCALE = self.stance_width
         self.task = SkiCourseTask(profile, seed)
         self._action_scale = action_scale
         self._cmd = 15.                  # 속도 명령(cm/s). 코스 단계는 "진행" 고정.
@@ -370,6 +377,7 @@ TURN_WEIGHTS = dict(
 )
 TURN_SIGMA_Y = 1.0             # cm
 INITIAL_SPEED = 8.             # cm/s, 폴라인 방향 초기 속도.
+S_WAVELENGTH = (25., 40.)      # S자 파장 범위(cm). 41번 이전 35~50.
 TURN_MAX_HEADING_ERR_DEG = 80.
 
 
@@ -380,7 +388,7 @@ class TurnTrackEnv(SpeedControlEnv):
     나중엔 후각(게이트)이 이 목표를 대신한다.
     """
 
-    episode_seconds = 5.0
+    episode_seconds = 9.0             # 코스 120cm(41번 이전 60cm, 4초면 끝나 턴이 2~3번뿐).
     fall_penalty = TURN_WEIGHTS['fall']
 
     def _on_reset(self):
@@ -389,7 +397,7 @@ class TurnTrackEnv(SpeedControlEnv):
         pos = p.data.xpos[self._th]
         # 에피소드마다 S자 방향/진폭/파장을 무작위로(궤적 하나만 외우지 않게).
         amp = self._rng.uniform(2., 4.) * self._rng.choice([-1., 1.])
-        self.reference = SCurve(float(pos[0]), float(pos[1]), amp, self._rng.uniform(35., 50.))
+        self.reference = SCurve(float(pos[0]), float(pos[1]), amp, self._rng.uniform(*S_WAVELENGTH))
         # 브레이크로 시작하지 않고 11자로 이미 달리는 상태에서 시작(사용자 요청, 39번).
         slope = np.deg2rad(COURSE['slope_deg'])
         p.data.qvel[:3] = INITIAL_SPEED * np.array([np.cos(slope), 0., -np.sin(slope)])
@@ -430,20 +438,23 @@ class TurnTrackEnv(SpeedControlEnv):
         return reason
 
 
-PARALLEL_BONUS = 0.4
+PARALLEL_BONUS = 1.0            # 41번 이전 0.4(패럴렐 비율 33%에 그침).
+PARALLEL_FULL_EDGE_DEG = 8.     # 두 판 중 얕은 쪽 엣지가 이 각이면 보상 최대.
 PARALLEL_MAX_WEDGE_DEG = 5.
 PARALLEL_MIN_EDGE_DEG = 1.5
 PARALLEL_TURN_HEADING_DEG = 10.   # 목표 진행각이 이보다 클 때(S자의 꺾이는 구간)만 판정.
 
 
 class ParallelTrackEnv(TurnTrackEnv):
-    """커리큘럼 3단계(패럴렐 턴): TurnTrackEnv + 패럴렐 자세 보상.
+    """커리큘럼 3단계(패럴렐 턴): TurnTrackEnv + 패럴렐 자세 보상. 스탠스 폭 0.85배.
 
     패럴렐 = S자의 꺾이는 구간(목표 진행각 > 10°)에서 두 판 방향 차 < 5°이고 두 판 엣지가
     같은 쪽(부호 같음, 각 1.5° 이상). 직진 구간에선 두 판이 안쪽 엣지로 살짝 선(A자) 게
     정상이라 판정하지 않는다. stats['carve']에 패럴렐 스텝 수를, stats['turn_steps']에
     판정 대상 스텝 수를 누적한다(로그 carve 칸 = 패럴렐 스텝 수).
     """
+
+    stance_width = 0.85               # 좁을수록 패럴렐 비율 높고 추종은 약간 나빠짐(41번).
 
     def _plate_state(self, p):
         n = self.task._slope_n
@@ -464,7 +475,8 @@ class ParallelTrackEnv(TurnTrackEnv):
         wedge, (e_l, e_r) = self._plate_state(p)
         parallel = (wedge < np.deg2rad(PARALLEL_MAX_WEDGE_DEG) and np.sign(e_l) == np.sign(e_r)
                     and min(abs(e_l), abs(e_r)) > np.deg2rad(PARALLEL_MIN_EDGE_DEG))
-        parts['parallel'] = PARALLEL_BONUS * float(parallel)
+        depth = min(abs(e_l), abs(e_r)) / np.deg2rad(PARALLEL_FULL_EDGE_DEG)
+        parts['parallel'] = PARALLEL_BONUS * float(parallel) * float(np.clip(depth, 0., 1.))
         self._stats['carve'] += float(parallel)
         self._stats['turn_steps'] = self._stats.get('turn_steps', 0) + 1
         return parts

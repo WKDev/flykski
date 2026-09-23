@@ -2,6 +2,8 @@
 """정책 실시간 재생.
 
     python -m flyski_sim.play --stage speed --controller expert       # 플루크 전문가(쐐기 + 요 제어)
+    python -m flyski_sim.play --stage parallel --controller parallel  # 패럴렐 전문가(S자 추종)
+    python -m flyski_sim.play --stage parallel --model runs/parallel2/model_latest.zip  # 학습 중 최신
     python -m flyski_sim.play --stage speed --controller snowplow     # 스크립트 플루크(명령 따라 쐐기)
     python -m flyski_sim.play --stage speed --model runs/speed1/model.zip
     python -m flyski_sim.play --stage course --model runs/ppo_try1/model.zip
@@ -133,7 +135,8 @@ class TrajectoryOverlay:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', default='speed', choices=tuple(ENVS))
-    ap.add_argument('--controller', default='model', choices=('model', 'expert', 'snowplow', 'zero'))
+    ap.add_argument('--controller', default='model',
+                    choices=('model', 'expert', 'steer', 'parallel', 'snowplow', 'zero'))
     ap.add_argument('--model', default=None)
     ap.add_argument('--slowmo', type=float, default=3.0)
     ap.add_argument('--seed', type=int, default=0)
@@ -145,6 +148,9 @@ def main():
         from flyski_sim.record import _compat
         model = PPO.load(args.model, device='cpu')
         policy = _compat(model, env)
+    elif args.controller in ('steer', 'parallel'):
+        from flyski_sim.experts import ParallelExpert, SteerExpert
+        policy = (SteerExpert if args.controller == 'steer' else ParallelExpert)(env)
     elif args.controller == 'expert':
         from flyski_sim.experts import SnowplowExpert
         policy = SnowplowExpert(env)
