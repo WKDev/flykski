@@ -183,11 +183,14 @@ class SkiCourseEnv(gym.Env):
         metrics = self.task.ski_metrics(p)
         odor = self._odor(p)
         r, parts, terminated, reason = self._reward(p, a, metrics, odor)
+        finished = reason == 'finish'
+        if finished:
+            terminated = False                  # 완주는 실패가 아니라 시간 제한과 같은 절단.
         d_odor = odor.mean() - self._odor_prev
         self._odor_prev = odor.mean()
         self._prev_a = a
         self._stats['steps'] += 1
-        truncated = bool(ts.last()) and not terminated
+        truncated = (bool(ts.last()) or finished) and not terminated
         info = dict(self._stats, parts=parts)
         if terminated or truncated:
             info['reason'] = reason or 'time'
@@ -210,7 +213,7 @@ class SkiCourseEnv(gym.Env):
     def _reward(self, p, a, metrics, odor):
         parts = self._task_reward(p, a, metrics, odor)
         reason = self._termination(p)
-        if reason:
+        if reason and reason != 'finish':
             parts['fall'] = self.fall_penalty
         return sum(parts.values()), parts, reason is not None, reason
 
@@ -227,7 +230,10 @@ class SkiCourseEnv(gym.Env):
             return 'fallen'
         if body_touch:
             return 'body_touch'
-        if abs(pos[1]) > dim[1] - 0.5 or pos[0] > dim[0] - 1.:
+        if pos[0] > dim[0] - 1.:
+            return 'finish'                    # 코스 끝 도달 = 완주(벌점 없음, 40번 이전엔
+                                               # off_course로 넘어짐과 같은 벌점을 받았다).
+        if abs(pos[1]) > dim[1] - 0.5:
             return 'off_course'
         return None
 

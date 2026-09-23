@@ -66,7 +66,7 @@ class LogCallback:
             return
         r, l, g, m, c, e, reason = zip(*self.buf)
         row = [timesteps, round((time.time() - self.t0) / 60, 2), len(r), np.mean(r), np.mean(l),
-               np.mean(g), np.mean(m), np.mean(c), np.mean(e), np.mean([x != 'time' for x in reason])]
+               np.mean(g), np.mean(m), np.mean(c), np.mean(e), np.mean([x not in ('time', 'finish') for x in reason])]
         with open(self.path, 'a', newline='') as f:
             csv.writer(f).writerow(row)
         print('ts={} min={} eps={} return={:.2f} len={:.0f} gates={:.2f} misses={:.2f} carve={:.2f} '
