@@ -20,8 +20,9 @@ import numpy as np
 from flyski_sim.rl_task import ENVS
 from flyski_sim.ski_stance import snowplow_pose
 
-# 속도 명령(cm/s) -> (쐐기°, 안쪽 엣지°). snowplow_test 측정값에서 고른 표.
-SNOWPLOW_TABLE = ((0., 30., 15.), (5., 18., 12.), (10., 10., 10.), (15., 0., 0.))
+# 속도 명령(cm/s) -> (쐐기°, 안쪽 엣지°). snowplow_test 측정값에서 고른 표. 판이 0.81cm로
+# 길어져(38번) 쐐기 20°부터 좌우 판 팁이 닿으므로 최대 20°.
+SNOWPLOW_TABLE = ((0., 20., 15.), (5., 12., 12.), (10., 7., 8.), (15., 0., 0.))
 
 
 def snowplow_controller(env):

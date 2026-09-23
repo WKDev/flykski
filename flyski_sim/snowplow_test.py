@@ -121,8 +121,8 @@ def main():
     if args.gif:
         os.makedirs(OUT_DIR, exist_ok=True)
     rows = []
-    for wedge, edge in ((0., 0.), (10., 10.), (20., 10.), (20., 15.), (30., 15.)):
-        frames = [] if args.gif and (wedge, edge) in ((0., 0.), (20., 15.)) else None
+    for wedge, edge in ((0., 0.), (10., 10.), (15., 12.), (20., 15.), (25., 15.)):
+        frames = [] if args.gif and (wedge, edge) in ((0., 0.), (15., 12.)) else None
         r = run(wedge, edge, frames=frames)
         rows.append(r)
         print({k: v for k, v in r.items() if not k.startswith('_')}, flush=True)

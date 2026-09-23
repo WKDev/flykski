@@ -37,6 +37,14 @@ PHI1 = np.deg2rad(20.)   # 이 이상이면 그립 최대.
 V0 = 2.0                 # cm/s, 정지마찰을 부드럽게 근사하는 속도 스케일. 0.5면 과도응답이 커서
                          # 예측보다 2~4배 급하게 돌았다(RESEARCH_NOTES 35번).
 N_CAP_BODYWEIGHTS = 2.   # 접촉 하나의 수직력 상한(몸무게 배수).
+# 판이 평평해도(엣지 < PHI0) 주는 기본 횡 그립 비율. 0이면 평평한 스키가 진행 방향으로
+# 정렬되려는 힘이 전혀 없어서, 0.81cm 판에선 폴라인으로 미끄러지면서 몸이 0.4초에 70°
+# 넘게 돌았다(RESEARCH_NOTES 38번). 실제 스키도 옆미끄럼 저항이 활주 마찰보다 크다(가정값).
+FLAT_GRIP_FRACTION = 0.25
+# 그립 힘을 걸 대상: 'segment'(접촉한 판 조각, 실제 하중 경로) 또는 'thorax'(몸통 루트).
+# thorax는 V0=0.5 시절 조각에 걸면 발산해서 택했지만, 옆 힘이 판->다리->몸 하중 경로를
+# 우회해서 사면에서 무게중심을 옮겨도 판 하중이 거의 안 바뀌었다(38번).
+APPLY_TO = 'thorax'
 
 
 class EdgeGrip:
@@ -101,10 +109,12 @@ class EdgeGrip:
             v_t = v - (v @ n) * n
             v_lat = float(v_t @ t)
             snow = self._snow_at(float(c.pos[0]))
-            mu = snow.edge_grip * float(np.clip((phi - PHI0) / (PHI1 - PHI0), 0., 1.))
+            ramp = float(np.clip((phi - PHI0) / (PHI1 - PHI0), 0., 1.))
+            mu = snow.edge_grip * (FLAT_GRIP_FRACTION + (1. - FLAT_GRIP_FRACTION) * ramp)
             if self._enabled and mu > 0. and N > 0.:
                 f = -mu * N * np.tanh(v_lat / V0) * t
-                mujoco.mj_applyFT(m, d, f, np.zeros(3), c.pos, self._target, d.qfrc_applied)
+                target = body if APPLY_TO == 'segment' else self._target
+                mujoco.mj_applyFT(m, d, f, np.zeros(3), c.pos, target, d.qfrc_applied)
             a = self._acc[side]
             a['n'] += 1
             a['lat'] += abs(v_lat)

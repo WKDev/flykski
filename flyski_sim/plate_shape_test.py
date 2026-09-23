@@ -27,6 +27,14 @@ def _hinges(p, task, side):
     return [p.model.name2id(j.full_identifier, 'joint') for j in names]
 
 
+def _foot_step(p, task, side):
+    """T1 connect 앵커가 붙은 조각이 가운데서 몇 번째인지(발 구간 반길이, 조각 수)."""
+    sid = p.model.name2id(f'walker/ski_bind_plate_T1_{side}', 'site')
+    seg = p.model.id2name(p.model.site_bodyid[sid], 'body')
+    m = len(task.skis[side].bodies) // 2
+    return int(seg.split('_s')[-1]) - m
+
+
 def _shape(p, task, side, jids):
     m = p.model
     dev = np.array([p.data.qpos[m.jnt_qposadr[j]] - m.qpos_spring[m.jnt_qposadr[j]] for j in jids])
@@ -34,8 +42,15 @@ def _shape(p, task, side, jids):
     # 있어서(체인이 가운데서 양쪽으로 뻗음) 같은 모양이면 같은 부호가 되게 맞춘다.
     n = len(dev)
     signed = np.where(np.arange(n) < n // 2, -dev, dev)
-    big = signed[np.abs(signed) > THRESH]
-    zig = bool(len(big) > 1 and np.any(np.sign(big[1:]) != np.sign(big[:-1])))
+    # 구간(테일 돌출부 / 발 구간 / 팁 돌출부)마다 따로 본다. 돌출부는 발 구간과 다르게
+    # 휘는 게 정상이다(ski_plate 구간별 묶기, 38번).
+    k = _foot_step(p, task, side)
+    h = n // 2
+    zones = [signed[:max(h - k, 0)], signed[max(h - k, 0):h + k], signed[h + k:]]
+    zig = False
+    for zone in zones:
+        big = zone[np.abs(zone) > THRESH]
+        zig |= bool(len(big) > 1 and np.any(np.sign(big[1:]) != np.sign(big[:-1])))
     bodies = sorted(task.skis[side].bodies, key=lambda b: int(b.name.split('_s')[-1]))
     pts = np.array([p.bind(b).xpos for b in bodies])
     R = p.bind(task.skis[side].root_body).xmat.reshape(3, 3)

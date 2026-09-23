@@ -102,13 +102,16 @@ def _rot(axis: str, angle: float) -> np.ndarray:
 
 
 def solve_plate_pose(walker, yaw_deg: dict[str, float], roll_deg: dict[str, float],
-                     ori_weight: float = 0.05) -> tuple[dict[str, float], dict[str, float]]:
+                     ori_weight: float = 0.05, shift_cm: dict[str, np.ndarray] | None = None
+                     ) -> tuple[dict[str, float], dict[str, float]]:
     """스탠스에서 판을 T2 발끝 기준으로 요(수직축)/롤(판 축)만큼 돌린 다리 자세를 IK로 구한다.
 
     yaw_deg/roll_deg: {'left': 각, 'right': 각}. 요 +는 반시계(팁이 왼쪽으로), 롤 +는
     오른쪽 엣지가 내려감. 플루크(쐐기)는 left 요 -, right 요 +(팁을 모음), left 롤 +,
     right 롤 -(안쪽 엣지). T1/T3는 발끝 위치만, T2는 발끝 위치 + 발(부츠) 방향까지
     맞춘다(부츠 요/롤 힌지가 단단해서 T2 발이 판과 같이 안 돌면 스프링과 싸움).
+    shift_cm: {'left': (dx, dy, dz)} thorax 좌표계에서 판(세 발끝)을 평행이동. 판을 -d로
+    옮기면 몸(무게중심)이 판 위에서 +d로 옮겨 간 것과 같다(하중 이동, 38번).
     반환: ({관절: 각}, {다리: 발끝 위치 오차 cm, T2는 방향 오차 rad도 'T2_side_ori'}).
     """
     physics = mjcf.Physics.from_mjcf_model(walker.mjcf_model)
@@ -127,12 +130,13 @@ def solve_plate_pose(walker, yaw_deg: dict[str, float], roll_deg: dict[str, floa
     for side in SIDES:
         R_delta = _rot('z', np.deg2rad(yaw_deg[side])) @ _rot('x', np.deg2rad(roll_deg[side]))
         pivot = tips0[f'T2_{side}']
+        shift = np.asarray((shift_cm or {}).get(side, (0., 0., 0.)), dtype=float)
         for leg in LEGS:
             names = [f'{j}_{leg}_{side}' for j in _MAIN_JOINTS]
             jids = [physics.model.name2id(n, 'joint') for n in names]
             qadr = physics.model.jnt_qposadr[jids]
             lo, hi = physics.model.jnt_range[jids].T
-            target = pivot + R_delta @ (tips0[f'{leg}_{side}'] - pivot)
+            target = pivot + shift + R_delta @ (tips0[f'{leg}_{side}'] - pivot)
             bid = physics.model.name2id(f'claw_{leg}_{side}', 'body')
             R_goal = R_delta @ claw_R0[side] if leg == 'T2' else None
 
@@ -160,7 +164,14 @@ def solve_plate_pose(walker, yaw_deg: dict[str, float], roll_deg: dict[str, floa
     return pose, errors
 
 
-def snowplow_pose(walker, wedge_deg: float, edge_deg: float):
-    """플루크(쐐기): 팁을 모으고(각 판 wedge_deg) 안쪽 엣지를 edge_deg만큼 세운 자세."""
+def snowplow_pose(walker, wedge_deg: float, edge_deg: float,
+                  com_shift_cm: tuple[float, float, float] = (0., 0., 0.)):
+    """플루크(쐐기): 팁을 모으고(각 판 wedge_deg) 안쪽 엣지를 edge_deg만큼 세운 자세.
+
+    com_shift_cm: 몸(무게중심)을 판 위에서 옮길 양(thorax 좌표, +y = 왼쪽). 플루크 보겐은
+    바깥 스키 쪽으로 옮긴다(왼쪽 턴 = 오른쪽 스키 쪽 = -y).
+    """
+    shift = -np.asarray(com_shift_cm, dtype=float)
     return solve_plate_pose(walker, {'left': -wedge_deg, 'right': wedge_deg},
-                            {'left': edge_deg, 'right': -edge_deg})
+                            {'left': edge_deg, 'right': -edge_deg},
+                            shift_cm={'left': shift, 'right': shift})

@@ -28,7 +28,12 @@ from flyski_sim.ski_profiles import SkiProfile
 from flyski_sim.ski_stance import compute_ski_stance
 
 SIDES = ('left', 'right')
-N_SEGMENTS = 7            # 홀수 — 가운데 조각이 root.
+N_SEGMENTS = None         # None이면 조각 길이 ~_SEG_LEN_CM이 되게 홀수 개(가운데 조각이 root).
+_SEG_LEN_CM = 0.062
+# 판 길이 = T1~T3 발끝 거리 + OVERHANG_SCALE x 프로파일 길이. T1/T2/T3 세 점이 판을 잡아
+# 휨을 다리가 정하므로(스케이트에 가까움, RESEARCH_NOTES 38번) 발 밖으로 나온 팁/테일이
+# 자유롭게 휘도록 길게 한다. 쐐기에서 좌우 판 팁이 닿지 않는 범위에서 고름.
+OVERHANG_SCALE = 3.5         # 판 0.43 -> 0.81cm(all_mountain). 길이 스윕은 38번.
 HALF_THICKNESS_CM = 0.004
 BINDING_HEIGHT_CM = 0.01
 _THETA_MAX_EXTRA_DEG = 8.0  # stiffness=0일 때 추가로 허용하는 휨각.
@@ -107,7 +112,7 @@ def plate_sidecut_radius_cm(profile: SkiProfile, length_cm: float) -> float:
 
 
 def attach_side_plates(walker, profile: SkiProfile,
-                       n_segments: int = N_SEGMENTS) -> dict[str, SkiUnit]:
+                       n_segments: int | None = N_SEGMENTS) -> dict[str, SkiUnit]:
     """walker의 좌/우 다리 3개씩에 휘는 스키 플레이트를 하나씩 붙인다."""
     info, R_th, x_th, weight = _rest_pose_info(walker, compute_ski_stance(walker))
     model = walker.mjcf_model
@@ -132,7 +137,9 @@ def attach_side_plates(walker, profile: SkiProfile,
         center_th = np.array([mid[0], mid[1],
                               tip_z - BINDING_HEIGHT_CM - HALF_THICKNESS_CM])
 
-        length = span + profile.length_cm
+        length = span + OVERHANG_SCALE * profile.length_cm
+        if n_segments is None:
+            n_segments = 2 * max(int(round(length / _SEG_LEN_CM / 2)), 1) + 1
         seg_len = length / n_segments
         m = n_segments // 2
         half_w_load = 0.5 * weight                           # 판 하나가 받는 하중.
@@ -235,20 +242,28 @@ def attach_side_plates(walker, profile: SkiProfile,
                 parent = body
 
         # 볼록성: 힌지가 제각각 꺾이면 판이 지그재그(비볼록)가 됐다(평지/플루크/엣징 모두
-        # 스텝의 99~100%, RESEARCH_NOTES 37번). 절반씩 묶어도 플루크에선 T1/T3 발이 팁과
-        # 테일을 서로 반대로 밀어 S자가 됐다. 그래서 판 전체 굽힘/비틀림을 한 값으로 묶어
-        # 곡률(비틀림률)이 일정한 판이 되게 한다. 테일 쪽 힌지는 부모가 +x 쪽이라 같은
-        # 모양에서 각의 부호가 팁 쪽과 반대이고, 캠버 springref도 +/-로 대칭이다.
+        # 스텝의 99~100%, RESEARCH_NOTES 37번). 구간마다 굽힘/비틀림 힌지를 한 값으로
+        # 묶어 구간 안에서는 곡률(비틀림률)이 일정하게 한다.
+        # - 발 구간(T3~T1 발 사이): 한 값. 절반씩 따로 두면 플루크에서 T1/T3가 팁과 테일을
+        #   반대로 밀어 S자가 됐다. 테일 쪽 힌지는 부모가 +x 쪽이라 같은 모양에서 각의
+        #   부호가 팁 쪽과 반대(캠버 springref도 +/- 대칭).
+        # - 팁 돌출부, 테일 돌출부(발 밖): 각각 따로 한 값. 발이 잡지 않는 부분이라 설면
+        #   하중으로 자유롭게 휜다(38번).
+        # 판 구속이 부드러우면(solref 0.002) 판 힌지 관성이 작아 크게 어긋나서 하드하게.
+        foot_step = max(int(round(abs(float((t1['tip_th'] - t2['tip_th']) @ ex)) / seg_len)), 1)
+        hard = dict(solref=(0.0004, 1.), solimp=(0.99, 0.999, 0.001, 0.5, 2.))
         for kind in (('bend', 'twist') if COUPLE_BENDING else ()):
-            leader = chain[(kind, +1)][0]
-            for direction in (+1, -1):
-                for follower in chain[(kind, direction)]:
-                    if follower is leader:
-                        continue
+            groups = [[(j, d) for d in (+1, -1) for j in chain[(kind, d)][:foot_step]]]
+            for d in (+1, -1):
+                over = chain[(kind, d)][foot_step:]
+                if over:
+                    groups.append([(j, +1) for j in over])     # 같은 방향끼리라 부호 같음.
+            for group in groups:
+                leader, lead_sign = group[0]
+                for follower, sign in group[1:]:
                     model.equality.add('joint', name=f'ski_{kind}_couple_{follower.name}',
                                        joint1=follower, joint2=leader,
-                                       polycoef=(0., float(direction), 0., 0., 0.),
-                                       solref=(0.0004, 1.), solimp=(0.99, 0.999, 0.001, 0.5, 2.))
+                                       polycoef=(0., float(sign * lead_sign), 0., 0., 0.), **hard)
 
         def add_binding_post(leg, idx, tip_plate):
             """시각 전용(충돌 없음) 바인딩 기둥: 판 중심선 윗면 -> 발끝. 구속 자체는

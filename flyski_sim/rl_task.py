@@ -276,6 +276,8 @@ class SkiCourseEnv(gym.Env):
 SPEED_WEIGHTS = dict(
     track=1.0,           # exp(-((속력 - 명령)/SPEED_SIGMA)^2).
     lateral=-0.02,       # 옆(y) 속도 cm/s 당. 폴라인에서 크게 벗어나지 않게.
+    heading=-0.5,        # (1 - cos 몸 요각) 당. speed1은 몸을 사면에 가로로 돌려 속도를
+                         # 조절했다(플루크가 아님, 37번). 폴라인을 보고 쐐기로 서게 한다.
     alive=0.05,
     ctrl=-0.01,
     fall=-20.,           # PPO 1회차는 -5가 카빙 보상에 묻혀 넘어짐이 ~70%였다.
@@ -283,6 +285,7 @@ SPEED_WEIGHTS = dict(
 SPEED_SIGMA = 4.               # cm/s
 SPEED_COMMANDS = (0., 5., 10., 15.)
 SPEED_HOLD = (0.6, 1.2)        # 명령 유지 시간(s) 범위.
+MAX_YAW_DEG = 70.              # 몸이 폴라인에서 이만큼 넘게 돌면 종료(가로 서기 금지).
 
 
 class SpeedControlEnv(SkiCourseEnv):
@@ -318,7 +321,18 @@ class SpeedControlEnv(SkiCourseEnv):
         self._stats['track'] += abs(err)
         return dict(track=w['track'] * float(np.exp(-(err / SPEED_SIGMA) ** 2)),
                     lateral=w['lateral'] * abs(float(v[1])),
+                    heading=w['heading'] * (1. - np.cos(self._yaw(p))),
                     alive=w['alive'], ctrl=w['ctrl'] * float(np.mean(a ** 2)))
+
+    def _yaw(self, p):
+        R = p.data.xmat[self._th].reshape(3, 3)
+        return float(np.arctan2(R[1, 0], R[0, 0]))       # 폴라인(+x) 대비 몸 요.
+
+    def _termination(self, p):
+        reason = super()._termination(p)
+        if reason is None and abs(self._yaw(p)) > np.deg2rad(MAX_YAW_DEG):
+            return 'traverse'
+        return reason
 
 
 ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv}
