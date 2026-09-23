@@ -40,9 +40,12 @@ def build_env(terrain: str, flat: bool, ski: str, seed: int, time_limit: float):
     task = SlopeSmokeTask(ski_profile=SKI_PROFILES[ski], walker=fruitfly.FruitFly,
                           arena=arena, time_limit=time_limit,
                           joint_filter=0., claw_friction=1.0)
+    # 뷰어는 첫 physics의 m/d를 붙잡고 있으므로 reset마다 MJCF를 재컴파일하면(기본값)
+    # 옛 physics가 해제돼 ReferenceError가 난다. 지형은 hfield 데이터만 다시 올리므로 불필요.
     return composer.Environment(time_limit=time_limit, task=task,
                                 random_state=np.random.RandomState(seed),
-                                strip_singleton_obs_buffer_dim=True)
+                                strip_singleton_obs_buffer_dim=True,
+                                recompile_mjcf_every_episode=False)
 
 
 def make_policy(kind: str, env):

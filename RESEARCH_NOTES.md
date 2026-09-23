@@ -242,6 +242,14 @@
 - **남은 한계**: 휨 강성은 실제 재료 물성이 아니라 "체중 대비 휨각" 휴리스틱. T2 발끝은 판 축에서 옆으로 ~0.07cm 떨어져 있어(발 배치상) 바인딩이 옆으로 튀어나온 구조. 항력은 판 면적 기준이라 N=6 때보다 전체 항력이 작아짐(재튜닝 안 함). 판 전체 최대 기울기가 모글에서 일시적으로 크게 튀는 건 전복 과정 포함.
 - **교훈**: "파라미터가 정의돼 있다" ≠ "물리에 반영된다" — 프로파일 필드를 추가하면 그 값이 실제로 읽히는 곳이 있는지 grep으로 확인할 것. 그리고 스키 시뮬레이터라면 **"스키가 실제로 미끄러지는가"**를 가장 먼저 검증했어야 했다 — 지금까지 모든 테스트가 "안정적"만 확인해서, 경사에서 꼼짝 않는 스키를 통과시켰다(14/30번과 같은 계열의 실수).
 
+## 33. live_view가 첫 리셋에서 죽었다 + 새 PC 설치 기록 + MJX/Warp 실측 (2026-09-23)
+- **버그**: `live_view` 창이 에피소드 종료나 코스 이탈 후 첫 `env.reset()`에서 `ReferenceError: weakly-referenced object no longer exists`로 종료. composer `Environment`의 기본값 `recompile_mjcf_every_episode=True`가 reset마다 Physics를 새로 만들고, 뷰어가 잡고 있던 m/d와 `physics` 프록시가 해제된 옛 객체를 가리켰다. 지형은 hfield 데이터만 재업로드하고 MJCF는 안 바꾸므로 `recompile_mjcf_every_episode=False`로 수정. 검증: 헤드리스 3회 reset에서 같은 data 객체 유지, 스폰 높이 지형+0.30cm, 0.5초 에피소드로 창을 4분 넘게 반복 리셋해도 유지.
+- **새 PC 설치**: conda가 없어서 Miniforge(conda-forge 전용, Anaconda ToS 무관)를 사용자 폴더에 무인 설치. 클론은 돼 있었지만 서브모듈이 비어 있어 `git submodule update --init` 필요했음. 이후 README 절차대로 `setup/verify.py` 5개 전부 OK.
+- **속도 실측(Ryzen 9 5900X, 모글, zero action)**: physics dt 2e-4, control dt 2e-3(서브스텝 10), nq 141/nv 138/nu 59. `env.step` 63 control steps/s/코어(실시간의 0.13배), 순수 `mj_step` 2553/s(=255 control steps/s). 즉 태스크 파이썬 훅(설질 마찰 갱신, 항력)이 시간의 ~75%를 쓴다.
+- **MJX(JAX) 불가**: `mjx.put_model`이 hfield-ellipsoid/cylinder 충돌 미구현, hfield-capsule margin/gap 미구현, adhesion 액추에이터(`mjTRN_BODY`) 미지원으로 차례로 막힘. 게다가 Windows에선 JAX GPU가 없음(WSL2 필요).
+- **MuJoCo Warp(RTX 3080)**: noslip만 끄면 `put_model`은 통과하지만, 착지 상태(CPU ncon 347)에서 broadphase 오버플로(nconmax 600도 부족) + 접촉 0개 + qpos 발산. 접촉 없는 상한치조차 2048 world에서 ~18k physics steps/s = ~1.8k control steps/s로, 12코어 CPU 순수 mj_step 합계(~3k control steps/s 추정)보다 느림. 이 모델(dt 2e-4, 138 DoF, 접촉 수백 개)에선 GPU 배치 시뮬이 이득이 없다.
+- **교훈**: "GPU로 수천 개 환경"은 모델이 GPU 백엔드에서 지원되고 접촉이 가벼울 때 얘기다. 옮기기 전에 `put_model` + 착지 상태 스텝 1회로 지원 여부와 발산 여부부터 확인할 것.
+
 ## 일반 교훈 정리
 - **소형/보조 모델의 판단(WebFetch 요약 등)은 1차 소스가 아니다** — 특히 부정적 결론("존재 안 함", "불가능")은 원본을 직접 받아 재검증.
 - **이 샌드박스에서 Windows GUI 인스톨러는 못 믿는다** — conda/pip 같은 CLI 우선.
