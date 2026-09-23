@@ -217,6 +217,28 @@ class SlopedMoguls(Hills):
                       grid_density=grid_density,
                       elevation_z_range=(0., 0.))  # 사용 안 함(bowl 미사용)
 
+        # 외관: Hills 기본(outdoor_natural)은 잔디 텍스처라 눈 슬로프로 바꾼다. 흰 바탕에
+        # 푸른빛 알갱이(random 마크)로 눈 결을, 하늘은 겨울 하늘 그라데이션으로.
+        if aesthetic != 'default':
+            self._texture.file = None
+            self._texture.type = '2d'
+            self._texture.set_attributes(builtin='flat', rgb1=(0.93, 0.95, 0.98),
+                                         rgb2=(0.72, 0.80, 0.92), mark='random',
+                                         random=0.25, width=512, height=512)
+            self._material.set_attributes(texrepeat=(40, 40), reflectance=0., emission=0.45,
+                                          specular=0.35, shininess=0.3)
+            self._skybox.file = None
+            self._skybox.gridsize = None
+            self._skybox.gridlayout = None
+            self._skybox.set_attributes(builtin='gradient', rgb1=(0.55, 0.72, 0.92),
+                                        rgb2=(0.97, 0.98, 1.0), width=512, height=3072)
+            # 초파리 추적 스포트라이트 밖은 회색으로 어두워서 햇빛(방향광)을 더한다. 헤드라이트는
+            # 초파리 모델이 이미 정해 둬서 바꾸면 mjcf 병합 충돌이 난다.
+            self._mjcf_root.worldbody.add('light', name='sun', directional='true',
+                                          pos=(0, 0, 50), dir=(0.3, 0.2, -1.),
+                                          diffuse=(0.9, 0.9, 0.92), specular=(0.1, 0.1, 0.1),
+                                          castshadow='false')
+
         # 다리 6개 + adhesion claw가 모두 hfield와 접촉 가능해서 기본 njmax/nconmax로는
         # 제약조건 스택이 부족해 mj_stackAlloc 오류가 났다(fruitfly.xml이 이미
         # njmax/nconmax를 쓰므로 'memory' 속성과 섞어 쓸 수 없음 — 같은 계열로 확대).

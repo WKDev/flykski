@@ -39,6 +39,15 @@ _BIND_RANGE_RAD = 0.8     # T2 바인딩(부츠) 앞뒤 굽힘 최대 ~46°.
 _BOOT_LATERAL_RATIO = 30.  # 부츠 옆/요 강성 = 앞뒤 강성 x 이 값.
 _BOOT_ROLL_RANGE_RAD = 0.6  # 부츠 롤 가동범위 ±34°(carving_test가 springref로 판을 세움).
 _LEG_BODY_PREFIXES = ('coxa', 'femur', 'tibia', 'tarsus', 'claw')
+# 설면에서 잘 보이는 형광색. 좌/우를 다르게 해서 렌더에서 구분되게.
+# 모서리 캡슐 필렛. 기본 끔: 반지름 = 반두께(완전히 둥근 엣지)면 판이 엣지로 서지 못하고
+# 굴러 누워(엣지 20° 목표에 1.9°) 팽이처럼 돌았다. MuJoCo 마찰은 모서리 모양과 무관해서
+# 각진 모서리가 "걸리는" 현상도 없다(RESEARCH_NOTES 37번). 부분 필렛은 메시가 필요.
+USE_FILLET = False
+# 바인딩(허리)을 더 잘록하게: 프로파일 사이드컷 깊이 x 이 값(사용자 요청, 37번).
+_SIDECUT_DEPTH_SCALE = 2.0
+COUPLE_BENDING = True      # 판 전체 굽힘/비틀림을 한 값으로 묶음(볼록성).
+_PLATE_RGBA = {'left': (0.45, 1.0, 0.05, 1.0), 'right': (1.0, 0.15, 0.75, 1.0)}
 
 
 def _mat_to_quat(R: np.ndarray) -> np.ndarray:
@@ -74,11 +83,17 @@ def _rest_pose_info(walker, joint_angles: dict[str, float] | None = None):
     return info, R_th, x_th, total_mass * gravity
 
 
+def _waist_cm(profile: SkiProfile) -> float:
+    """허리(바인딩) 폭. 프로파일 사이드컷 깊이를 _SIDECUT_DEPTH_SCALE배로 더 잘록하게."""
+    mean_end = (profile.width_tip_cm + profile.width_tail_cm) / 2
+    return mean_end - _SIDECUT_DEPTH_SCALE * (mean_end - profile.width_waist_cm)
+
+
 def _width_at(profile: SkiProfile, s: float) -> float:
     """s∈[-1(테일), +1(팁)]에서의 스키 폭 — 사이드컷을 2차 보간."""
-    if s >= 0:
-        return profile.width_waist_cm + (profile.width_tip_cm - profile.width_waist_cm) * s * s
-    return profile.width_waist_cm + (profile.width_tail_cm - profile.width_waist_cm) * s * s
+    waist = _waist_cm(profile)
+    end = profile.width_tip_cm if s >= 0 else profile.width_tail_cm
+    return waist + (end - waist) * s * s
 
 
 def plate_sidecut_radius_cm(profile: SkiProfile, length_cm: float) -> float:
@@ -87,7 +102,7 @@ def plate_sidecut_radius_cm(profile: SkiProfile, length_cm: float) -> float:
     깊이 = ((팁 폭 + 테일 폭)/2 - 허리 폭)/2. 프로파일의 `sidecut_radius_cm`(0.45~1.1cm)는
     옛 미니스키(길이 0.12~0.22cm) 기준 설계 상수라 지금 판(~0.4cm) 형상과 맞지 않는다.
     """
-    depth = ((profile.width_tip_cm + profile.width_tail_cm) / 2 - profile.width_waist_cm) / 2
+    depth = ((profile.width_tip_cm + profile.width_tail_cm) / 2 - _waist_cm(profile)) / 2
     return float(length_cm ** 2 / (8 * max(depth, 1e-6)))
 
 
@@ -148,15 +163,42 @@ def attach_side_plates(walker, profile: SkiProfile,
                 kw['quat'] = tuple(quat)
             body = parent.add('body', **kw)
             s = (idx - m) / m                                  # -1(테일)~+1(팁).
-            g = body.add('geom', name=f'ski_geom_{side}_s{idx}', type='box',
-                         size=(seg_len / 2, _width_at(profile, s) / 2, HALF_THICKNESS_CM),
-                         mass=seg_mass, contype=1, conaffinity=1, condim=3,
-                         # priority=1: 스키-지면 접촉은 지면이 아니라 이 geom의
-                         # 마찰(설질별 ski_friction, 매 스텝 갱신)을 쓴다.
-                         priority=1, friction=(0.05, 0.005, 0.0001),
-                         rgba=(0.7, 0.85, 1.0, 0.9))
+            half_w = _width_at(profile, s) / 2
+            r = HALF_THICKNESS_CM
+            # 필렛: 가운데 얇은 box + 양쪽 긴 모서리 캡슐(반지름 = 판 반두께). 옆 엣지와
+            # 조각 끝이 둥글어서 직진/정지 때 각진 모서리가 설면에 걸리지 않는다. 엣지
+            # 그립은 형상이 아니라 엣지각 기반 모델(edge_grip.py)이라 필렛이 그립을 줄이지는
+            # 않는다(실제 스키라면 둥근 엣지는 덜 박힘).
+            # priority=1: 스키-지면 접촉은 지면이 아니라 이 geom의 마찰(설질별 ski_friction,
+            # 매 스텝 갱신)을 쓴다.
+            common = dict(contype=1, conaffinity=1, condim=3, priority=1,
+                          friction=(0.05, 0.005, 0.0001), rgba=_PLATE_RGBA[side])
+            if not USE_FILLET and idx == n_segments - 1:
+                # 팁 조각: 위에서 봤을 때 둥근 헤드. 앞쪽 half_w 만큼을 세로축 원판으로
+                # 바꿔 평면상 반원 끝이 되게 한다(옆 엣지는 각진 그대로).
+                body.add('geom', name=f'ski_geom_{side}_s{idx}', type='box',
+                         size=((seg_len - half_w) / 2, half_w, r), pos=(-half_w / 2, 0., 0.),
+                         mass=0.7 * seg_mass, **common)
+                body.add('geom', name=f'ski_geom_{side}_s{idx}_head', type='cylinder',
+                         size=(half_w, r), pos=(seg_len / 2 - half_w, 0., 0.),
+                         mass=0.3 * seg_mass, **common)
+                bodies.append(body)
+                geoms.extend(body.find_all('geom'))
+                return body
+            if not USE_FILLET:
+                body.add('geom', name=f'ski_geom_{side}_s{idx}', type='box',
+                         size=(seg_len / 2, half_w, r), mass=seg_mass, **common)
+                bodies.append(body)
+                geoms.extend(body.find_all('geom'))
+                return body
+            body.add('geom', name=f'ski_geom_{side}_s{idx}', type='box',
+                     size=(seg_len / 2, half_w - r, r), mass=0.6 * seg_mass, **common)
+            for k, y in (('L', half_w - r), ('R', -(half_w - r))):
+                body.add('geom', name=f'ski_geom_{side}_s{idx}_{k}', type='capsule',
+                         fromto=(-seg_len / 2, y, 0., seg_len / 2, y, 0.), size=(r,),
+                         mass=0.2 * seg_mass, **common)
             bodies.append(body)
-            geoms.append(g)
+            geoms.extend(body.find_all('geom'))
             return body
 
         root = add_segment(t2['claw'], m, root_pos, root_quat)
@@ -174,6 +216,7 @@ def attach_side_plates(walker, profile: SkiProfile,
                      pos=tuple(t2_tip_plate), **hinge_kw(k_bind * ratio, rng=(-rng, rng)))
 
         seg_by_idx = {m: root}
+        chain = {}                                            # (굽힘/비틀림, 방향) -> 힌지들.
         for direction in (+1, -1):
             parent = root
             for step in range(1, m + 1):
@@ -182,13 +225,30 @@ def attach_side_plates(walker, profile: SkiProfile,
                 hinge_pos = (-direction * seg_len / 2, 0., 0.)
                 # 캠버(+)=팁/테일이 아래로, 로커(-)=위로. +y 회전은 +x 끝을 내린다.
                 ref = direction * profile.rocker_camber * np.deg2rad(_CAMBER_DEG_PER_HINGE)
-                body.add('joint', name=f'ski_bend_{side}_s{idx}', type='hinge',
-                         axis=(0, 1, 0), pos=hinge_pos, springref=float(ref),
-                         **hinge_kw(k_bend))
-                body.add('joint', name=f'ski_twist_{side}_s{idx}', type='hinge',
-                         axis=(1, 0, 0), pos=hinge_pos, **hinge_kw(k_tors))
+                chain.setdefault(('bend', direction), []).append(body.add(
+                    'joint', name=f'ski_bend_{side}_s{idx}', type='hinge',
+                    axis=(0, 1, 0), pos=hinge_pos, springref=float(ref), **hinge_kw(k_bend)))
+                chain.setdefault(('twist', direction), []).append(body.add(
+                    'joint', name=f'ski_twist_{side}_s{idx}', type='hinge',
+                    axis=(1, 0, 0), pos=hinge_pos, **hinge_kw(k_tors)))
                 seg_by_idx[idx] = body
                 parent = body
+
+        # 볼록성: 힌지가 제각각 꺾이면 판이 지그재그(비볼록)가 됐다(평지/플루크/엣징 모두
+        # 스텝의 99~100%, RESEARCH_NOTES 37번). 절반씩 묶어도 플루크에선 T1/T3 발이 팁과
+        # 테일을 서로 반대로 밀어 S자가 됐다. 그래서 판 전체 굽힘/비틀림을 한 값으로 묶어
+        # 곡률(비틀림률)이 일정한 판이 되게 한다. 테일 쪽 힌지는 부모가 +x 쪽이라 같은
+        # 모양에서 각의 부호가 팁 쪽과 반대이고, 캠버 springref도 +/-로 대칭이다.
+        for kind in (('bend', 'twist') if COUPLE_BENDING else ()):
+            leader = chain[(kind, +1)][0]
+            for direction in (+1, -1):
+                for follower in chain[(kind, direction)]:
+                    if follower is leader:
+                        continue
+                    model.equality.add('joint', name=f'ski_{kind}_couple_{follower.name}',
+                                       joint1=follower, joint2=leader,
+                                       polycoef=(0., float(direction), 0., 0., 0.),
+                                       solref=(0.0004, 1.), solimp=(0.99, 0.999, 0.001, 0.5, 2.))
 
         def add_binding_post(leg, idx, tip_plate):
             """시각 전용(충돌 없음) 바인딩 기둥: 판 중심선 윗면 -> 발끝. 구속 자체는

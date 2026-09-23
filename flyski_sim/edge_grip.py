@@ -81,7 +81,8 @@ class EdgeGrip:
             mujoco.mj_contactForce(m, d, i, self._f6)
             N = min(max(self._f6[0], 0.), self._n_cap)
             side = self._geom_side[g]
-            ey = d.geom_xmat[g].reshape(3, 3)[:, 1]
+            # 조각 body 좌표계(geom 좌표계는 캡슐 필렛이면 축이 돌아가 있음).
+            ey = d.xmat[m.geom_bodyid[g]].reshape(3, 3)[:, 1]
             phi = float(np.arcsin(min(abs(ey @ n), 1.)))
             # 카빙 호의 접선: 판 축(지면 투영)을 접촉점 위치 s만큼 엣지 쪽으로 돌린다.
             # ey*n > 0 = 왼쪽(+y)이 들림 = 오른쪽 엣지 = 오른쪽(시계방향, 곡률 -)으로 돎.
