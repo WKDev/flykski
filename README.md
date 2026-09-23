@@ -38,7 +38,9 @@ python setup/verify.py                   # 설치 검사(지형/스키/텔레메
 
 ## 실행
 
-모두 레포 루트에서 `python -m`으로 실행한다.
+모두 레포 루트에서 `python -m`으로 실행한다(`conda activate flybody` 후).
+Windows에서 conda 활성화 없이 쓰려면 레포 루트의 `flyski.cmd`로 모듈 이름만 주면 된다
+(`%USERPROFILE%\miniforge3\envslybody\python.exe`를 씀). 예: `.lyski play --stage speed --controller snowplow`.
 
 ```bash
 python -m flyski_sim.live_view                          # 실시간 3D 창 (모글, 힘 뺀 활강)
@@ -51,7 +53,9 @@ python -m flyski_sim.carving_test --gif                 # 카빙 물리(엣지 �
 python -m flyski_sim.render_stance                      # 스키 스탠스 근접 샷(renders/stance/)
 
 # 강화학습(추가 설치: setup/rl_requirements.txt 참고)
-python -m flyski_sim.rl_task                            # S자 카빙 환경 점검(0/무작위 액션 보상 항목)
+python -m flyski_sim.rl_task [course|speed]            # RL 환경 점검(0/무작위 액션 보상 항목)
+python -m flyski_sim.play --stage speed --controller snowplow   # 플루크 전문가 실시간 창
+python -m flyski_sim.play --stage speed --model runs/speed3/model.zip  # 학습된 정책 실시간 창
 python -m flyski_sim.train_rl --minutes 40 --envs 10    # PPO 1회, runs/<이름>/에 곡선/GIF
 python -m flyski_sim.run_topology_comparison_calibrated # real/shuffled/random 3x5 비교 (~25분)
 ```
