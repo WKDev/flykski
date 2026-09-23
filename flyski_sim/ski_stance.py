@@ -98,11 +98,14 @@ def _rot(axis: str, angle: float) -> np.ndarray:
     c, s = np.cos(angle), np.sin(angle)
     if axis == 'x':
         return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    if axis == 'y':
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 
 def solve_plate_pose(walker, yaw_deg: dict[str, float], roll_deg: dict[str, float],
-                     ori_weight: float = 0.05, shift_cm: dict[str, np.ndarray] | None = None
+                     ori_weight: float = 0.05, shift_cm: dict[str, np.ndarray] | None = None,
+                     pitch_deg: dict[str, float] | None = None
                      ) -> tuple[dict[str, float], dict[str, float]]:
     """스탠스에서 판을 T2 발끝 기준으로 요(수직축)/롤(판 축)만큼 돌린 다리 자세를 IK로 구한다.
 
@@ -128,7 +131,9 @@ def solve_plate_pose(walker, yaw_deg: dict[str, float], roll_deg: dict[str, floa
         claw_R0[side] = R_th.T @ physics.data.xmat[bid].reshape(3, 3)
     pose, errors = dict(stance), {}
     for side in SIDES:
-        R_delta = _rot('z', np.deg2rad(yaw_deg[side])) @ _rot('x', np.deg2rad(roll_deg[side]))
+        pitch = np.deg2rad((pitch_deg or {}).get(side, 0.))     # + = 팁이 내려감(y축 둘레).
+        R_delta = (_rot('z', np.deg2rad(yaw_deg[side])) @ _rot('x', np.deg2rad(roll_deg[side]))
+                   @ _rot('y', pitch))
         pivot = tips0[f'T2_{side}']
         shift = np.asarray((shift_cm or {}).get(side, (0., 0., 0.)), dtype=float)
         for leg in LEGS:

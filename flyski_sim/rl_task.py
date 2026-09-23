@@ -119,7 +119,7 @@ class SkiCourseEnv(gym.Env):
         self._body_geoms = walker_geoms - ski_geoms
         n_act = len(self._leg_names)
         self.action_space = gym.spaces.Box(-1., 1., (n_act,), np.float32)
-        obs_dim = 2 * n_act + 9 + 8 + 4 + 1 + n_act
+        obs_dim = 2 * n_act + 9 + 8 + 4 + 1 + 2 + n_act
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, (obs_dim,), np.float32)
         self._prev_a = np.zeros(n_act)
 
@@ -153,6 +153,7 @@ class SkiCourseEnv(gym.Env):
             self._ski_sense(p, metrics),
             [odor[0], odor[1], 10. * (odor[0] - odor[1]), 10. * d_odor],
             [self._cmd / 20.],
+            self._track_obs(),
             self._prev_a])
         return np.nan_to_num(obs).astype(np.float32)
 
@@ -193,6 +194,10 @@ class SkiCourseEnv(gym.Env):
         return self._obs(metrics, odor, d_odor), float(r), terminated, truncated, info
 
     # ---- 단계별 훅 ----
+    def _track_obs(self):
+        """목표 궤적 대비 (방향 오차 rad, 옆 오차 cm/3). 목표 궤적이 없는 단계는 0."""
+        return [0., 0.]
+
     def _on_reset(self):
         pass
 
@@ -335,7 +340,91 @@ class SpeedControlEnv(SkiCourseEnv):
         return reason
 
 
-ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv}
+class SCurve:
+    """폴라인(+x)을 따라 반복되는 완만한 S자 목표 궤적 y(x) = A sin(2 pi (x - x0) / L)."""
+
+    def __init__(self, x0: float, y0: float = 0., amplitude: float = 3., wavelength: float = 40.):
+        self.x0, self.y0, self.a, self.k = x0, y0, amplitude, 2 * np.pi / wavelength
+
+    def y(self, x):
+        return self.y0 + self.a * np.sin(self.k * (x - self.x0))
+
+    def heading(self, x):
+        """목표 진행 방향(rad, + = 왼쪽)."""
+        return float(np.arctan(self.a * self.k * np.cos(self.k * (x - self.x0))))
+
+
+TURN_WEIGHTS = dict(
+    lateral=1.0,         # exp(-(옆 오차/TURN_SIGMA_Y)^2).
+    heading=0.5,         # cos(방향 오차).
+    speed=0.3,           # exp(-((속력 - 명령)/SPEED_SIGMA)^2).
+    alive=0.05,
+    ctrl=-0.01,
+    fall=-20.,
+)
+TURN_SIGMA_Y = 1.0             # cm
+INITIAL_SPEED = 8.             # cm/s, 폴라인 방향 초기 속도.
+TURN_MAX_HEADING_ERR_DEG = 80.
+
+
+class TurnTrackEnv(SpeedControlEnv):
+    """커리큘럼 2단계(플루크 보겐/슈템): S자 목표 궤적 따라가기. 속도 명령은 10cm/s 고정.
+
+    관측의 목표 오차 2칸(방향 오차, 옆 오차)은 상위 내비게이터가 주는 명령에 해당한다.
+    나중엔 후각(게이트)이 이 목표를 대신한다.
+    """
+
+    episode_seconds = 5.0
+    fall_penalty = TURN_WEIGHTS['fall']
+
+    def _on_reset(self):
+        self._cmd = 10.
+        p = self.env.physics
+        pos = p.data.xpos[self._th]
+        # 에피소드마다 S자 방향/진폭/파장을 무작위로(궤적 하나만 외우지 않게).
+        amp = self._rng.uniform(2., 4.) * self._rng.choice([-1., 1.])
+        self.reference = SCurve(float(pos[0]), float(pos[1]), amp, self._rng.uniform(35., 50.))
+        # 브레이크로 시작하지 않고 11자로 이미 달리는 상태에서 시작(사용자 요청, 39번).
+        slope = np.deg2rad(COURSE['slope_deg'])
+        p.data.qvel[:3] = INITIAL_SPEED * np.array([np.cos(slope), 0., -np.sin(slope)])
+
+    def _on_step(self):
+        pass
+
+    def _errors(self, p):
+        pos = p.data.xpos[self._th]
+        v = p.data.qvel[:2]
+        head = float(np.arctan2(v[1], v[0])) if np.linalg.norm(v) > 3. else self._yaw(p)
+        e_psi = float(np.angle(np.exp(1j * (self.reference.heading(pos[0]) - head))))
+        e_y = float(self.reference.y(pos[0]) - pos[1])
+        return e_psi, e_y
+
+    def _track_obs(self):
+        if not hasattr(self, 'reference'):
+            return [0., 0.]
+        e_psi, e_y = self._errors(self.env.physics)
+        return [e_psi, e_y / 3.]
+
+    def _task_reward(self, p, a, metrics, odor):
+        w = TURN_WEIGHTS
+        e_psi, e_y = self._errors(p)
+        speed = float(np.linalg.norm(p.data.qvel[:2]))
+        self._stats['track'] += abs(e_y)
+        return dict(lateral=w['lateral'] * float(np.exp(-(e_y / TURN_SIGMA_Y) ** 2)),
+                    heading=w['heading'] * float(np.cos(e_psi)),
+                    speed=w['speed'] * float(np.exp(-((speed - self._cmd) / SPEED_SIGMA) ** 2)),
+                    alive=w['alive'], ctrl=w['ctrl'] * float(np.mean(a ** 2)))
+
+    def _termination(self, p):
+        reason = SkiCourseEnv._termination(self, p)
+        # 착지(처음 0.2초) 동안은 방향 오차로 끝내지 않는다(착지 충격에 요가 튐).
+        if (reason is None and self._stats['steps'] > 20
+                and abs(self._errors(p)[0]) > np.deg2rad(TURN_MAX_HEADING_ERR_DEG)):
+            return 'heading'
+        return reason
+
+
+ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv, 'turn': TurnTrackEnv}
 
 
 def main():

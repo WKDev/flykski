@@ -77,10 +77,10 @@ class LogCallback:
 def _collect_expert(args):
     """워커: 플루크 전문가 시범 수집. 실행은 노이즈 섞은 액션, 기록은 전문가 액션(DART)."""
     stage, seed, n_eps, table, noise = args
-    from flyski_sim.experts import SnowplowExpert
+    from flyski_sim.experts import expert_for
     from flyski_sim.rl_task import ENVS
     env = ENVS[stage](seed=seed)
-    expert = SnowplowExpert(env, table)
+    expert = expert_for(stage)[1](env, table)
     rng = np.random.RandomState(seed)
     obs_l, act_l, rets = [], [], []
     for ep in range(n_eps):
@@ -99,11 +99,11 @@ def _collect_expert(args):
 
 
 def collect_expert(stage, n_eps, n_workers, out, noise=0.1):
-    """플루크 전문가 시범을 병렬 수집(학습 워커를 띄우기 전에 끝낸다, 메모리)."""
+    """단계별 전문가 시범을 병렬 수집(학습 워커를 띄우기 전에 끝낸다, 메모리)."""
     import multiprocessing as mp
-    from flyski_sim.experts import build_table
+    from flyski_sim.experts import expert_for
     from flyski_sim.rl_task import ENVS
-    table = build_table(ENVS[stage](seed=0))
+    table = expert_for(stage)[0](ENVS[stage](seed=0))
     per = max(n_eps // n_workers, 1)
     with mp.get_context('spawn').Pool(n_workers) as pool:
         parts = pool.map(_collect_expert, [(stage, 100 + i, per, table, noise) for i in range(n_workers)])
@@ -187,7 +187,7 @@ def main():
     ap.add_argument('--minutes', type=float, default=35.)
     ap.add_argument('--envs', type=int, default=10)
     ap.add_argument('--name', default='ppo_try1')
-    ap.add_argument('--stage', default='course', choices=('course', 'speed'))
+    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn'))
     ap.add_argument('--bc-episodes', type=int, default=0,
                     help='>0이면 플루크 전문가 시범으로 행동 복제 워밍업 후 PPO(speed 단계)')
     ap.add_argument('--log-std', type=float, default=-1.0,

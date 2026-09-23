@@ -134,8 +134,9 @@ def main():
     env = ENVS[args.stage](seed=args.seed)
     if args.model:
         from stable_baselines3 import PPO
+        from flyski_sim.record import _compat
         model = PPO.load(args.model, device='cpu')
-        policy = lambda obs: model.predict(obs, deterministic=True)[0]
+        policy = _compat(model, env)
     elif args.controller == 'expert':
         from flyski_sim.experts import SnowplowExpert
         policy = SnowplowExpert(env)

@@ -48,3 +48,60 @@ class SnowplowExpert:
         t = (d - a0) / (a1 - a0)
         cmd = min(WEDGE_BY_CMD, key=lambda c: abs(c - self.env._cmd))
         return (1 - t) * self.table[(cmd, a0)] + t * self.table[(cmd, a1)]
+
+
+# ---- 조향(S자 추종) 전문가 ----
+# 조향 입력 u(-1~+1, + = 왼쪽으로 돌기). 판은 11자(쐐기 0) 그대로 두고, 바깥 판(u>0이면
+# 오른쪽)만 안쪽 엣지를 걸고 안쪽 판 엣지는 풀며, 무게중심을 바깥 판 쪽으로 옮긴다
+# (스키딩 패럴렐 턴에 가까움). 쐐기 0에서 이렇게 하면 사람 스키와 같은 방향으로 돈다(요
+# +-42~53°). 바깥 판을 벌리는(슈템) 동작을 더하면 벌린 판이 브레이크처럼 몸을 그쪽으로
+# 돌려 방향이 뒤집혔다: 판이 몸에 단단히 묶여 있고 요 관성이 아주 작은 초파리 스케일
+# 특성(RESEARCH_NOTES 39번).
+STEER_BASE_WEDGE = 0.
+STEER_COM_CM = 0.06            # 몸을 바깥 판 쪽으로 옮기는 양(cm, 판 사이 반폭 ~0.13cm).
+STEER_EDGE_DEG = 12.           # 바깥 판 안쪽 엣지각(직진일 땐 양쪽 다 이 값).
+STEER_US = np.linspace(-1., 1., 9)
+STEER_SMOOTH = 0.2              # 1차 저역 필터 계수(스텝당).
+K_PSI, K_Y, K_R = 2.5, 0.3, 0.3  # u = K_PSI * 방향 오차(rad) + K_Y * 옆 오차(cm) - K_R * 요레이트(rad/s)
+
+
+def build_steer_table(env) -> dict:
+    table = {}
+    for u in STEER_US:
+        e_r = STEER_EDGE_DEG * (1. if u >= 0 else 1. + u)  # u>0: 오른쪽 판이 바깥 -> 엣지 유지.
+        e_l = STEER_EDGE_DEG * (1. if u <= 0 else 1. - u)
+        com_y = -STEER_COM_CM * u                       # u>0: 몸을 오른쪽(-y) 판 위로.
+        shift = -np.array([0., com_y, 0.])              # 판을 -d로 = 몸을 +d로.
+        pose, _ = solve_plate_pose(env.task.walker, {'left': -STEER_BASE_WEDGE, 'right': STEER_BASE_WEDGE},
+                                   {'left': e_l, 'right': -e_r}, shift_cm={'left': shift, 'right': shift})
+        off = np.array([pose[n] - env._stance_q[i] for i, n in enumerate(env._leg_names)])
+        table[float(u)] = np.clip(off / env._action_scale, -1., 1.)
+    return table
+
+
+class SteerExpert:
+    """S자 목표 궤적 추종: 방향/옆 오차 -> 조향 입력 u -> (엣지, 무게중심) 자세 보간."""
+
+    def __init__(self, env, table: dict | None = None):
+        self.env = env
+        self.table = table if table is not None else build_steer_table(env)
+        self.last_u = 0.
+
+    def __call__(self, obs=None) -> np.ndarray:
+        e_psi, e_y = self.env._errors(self.env.env.physics)
+        p = self.env.env.physics
+        yaw_rate = float(p.data.cvel[self.env._th][2])
+        u = float(np.clip(K_PSI * e_psi + K_Y * e_y - K_R * yaw_rate, -1., 1.))
+        if self.env._stats['steps'] < 20:         # 착지 0.2초 동안은 조향하지 않음.
+            u = 0.
+        u = self.last_u + STEER_SMOOTH * (u - self.last_u)   # 조향 떨림 저역 필터.
+        self.last_u = u
+        i = int(np.clip(np.searchsorted(STEER_US, u), 1, len(STEER_US) - 1))
+        a0, a1 = float(STEER_US[i - 1]), float(STEER_US[i])
+        t = (u - a0) / (a1 - a0)
+        return (1 - t) * self.table[a0] + t * self.table[a1]
+
+
+def expert_for(stage: str):
+    """단계별 (표 생성 함수, 전문가 클래스)."""
+    return {'speed': (build_table, SnowplowExpert), 'turn': (build_steer_table, SteerExpert)}[stage]
