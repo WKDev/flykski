@@ -51,7 +51,7 @@ class LogCallback:
                         outer.buf.append((ep['r'], ep['l'], info.get('gates', 0),
                                           info.get('misses', 0), info.get('carve', 0.),
                                           info.get('track', 0.) / max(ep['l'], 1),
-                                          info.get('reason', '')))
+                                          info.get('reason', ''), info.get('arc', 0.)))
                 return time.time() < deadline
 
             def _on_rollout_end(self):
@@ -77,19 +77,20 @@ class LogCallback:
         with open(path, 'w', newline='') as f:
             csv.writer(f).writerow(['timesteps', 'minutes', 'episodes', 'mean_return', 'mean_len',
                                     'mean_gates', 'mean_misses', 'mean_carve', 'mean_speed_err',
-                                    'fall_frac'])
+                                    'fall_frac', 'mean_arc'])
 
     def flush(self, timesteps):
         if not self.buf:
             return
-        r, l, g, m, c, e, reason = zip(*self.buf)
+        r, l, g, m, c, e, reason, arc = zip(*self.buf)
         self.returns = (self.returns + list(r))[-BEST_WINDOW:]
         row = [timesteps, round((time.time() - self.t0) / 60, 2), len(r), np.mean(r), np.mean(l),
-               np.mean(g), np.mean(m), np.mean(c), np.mean(e), np.mean([x not in ('time', 'finish') for x in reason])]
+               np.mean(g), np.mean(m), np.mean(c), np.mean(e), np.mean([x not in ('time', 'finish') for x in reason]),
+               np.mean(arc)]
         with open(self.path, 'a', newline='') as f:
             csv.writer(f).writerow(row)
         print('ts={} min={} eps={} return={:.2f} len={:.0f} gates={:.2f} misses={:.2f} carve={:.2f} '
-              'speed_err={:.2f} fall={:.2f}'.format(*row), flush=True)
+              'speed_err={:.2f} fall={:.2f} arc={:.1f}'.format(*row), flush=True)
         self.buf = []
 
 
@@ -207,7 +208,7 @@ def main():
     ap.add_argument('--envs', type=int, default=0,
                     help='병렬 환경 수. 0이면 코어 수 - 2(이 PC 22). 워커는 수치 라이브러리 스레드 1개')
     ap.add_argument('--name', default='ppo_try1')
-    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn', 'parallel', 'residual'))
+    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn', 'parallel', 'residual', 'carve'))
     ap.add_argument('--init', default=None, help='앞 단계 model.zip 가중치로 시작(커리큘럼)')
     ap.add_argument('--bc-episodes', type=int, default=0,
                     help='>0이면 플루크 전문가 시범으로 행동 복제 워밍업 후 PPO(speed 단계)')

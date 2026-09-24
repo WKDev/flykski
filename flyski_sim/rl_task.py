@@ -520,7 +520,43 @@ class ParallelTrackEnv(TurnTrackEnv):
         return parts
 
 
-RESIDUAL_SCALE = 0.3             # 잔차 정책 액션(-1~1)에 곱하는 배율. 최종 = 전문가 + 이 값 x 정책.
+CARVE_BONUS = 1.0               # 턴 구간 스텝당 최대 카빙 보상(패럴렐 보상과 같은 크기).
+CARVE_SIGMA = 0.5               # ln(턴 반경 / 판 호 반경)의 허용 폭. 0.5면 비율 0.6~1.6에서 보상 0.37 이상.
+CARVE_MIN_EDGE_DEG = 5.
+
+
+class CarveTrackEnv(ParallelTrackEnv):
+    """커리큘럼 4단계(카빙): ParallelTrackEnv + "판 호를 따라 돌았나" 보상(47번).
+
+    판이 엣지각 phi로 서면 사이드컷 R_sc 판은 반경 R_sc x cos(phi) 호를 그린다(edge_grip과 같은
+    식). 카빙 = 실제 턴 반경(속력 / 요레이트)이 그 호 반경과 같고, 도는 방향이 엣지 쪽. 다리로 판을
+    비틀어 도는 턴(gs4: 반경 4cm, 호 14cm)은 비율이 1에서 멀어 보상이 작다. 스키딩 비율은 그립
+    모델이 옆미끄럼을 늘 작게 눌러서(0.07) 카빙을 구분하지 못해 쓰지 않았다.
+    stats['arc']에 카빙 점수 합을 누적한다.
+    """
+
+    def _task_reward(self, p, a, metrics, odor):
+        parts = super()._task_reward(p, a, metrics, odor)
+        parts['carve'] = 0.
+        pos = p.data.xpos[self._th]
+        if abs(self.reference.nearest(float(pos[0]), float(pos[1]))[0]) < np.deg2rad(PARALLEL_TURN_HEADING_DEG):
+            return parts
+        speed = float(np.linalg.norm(p.data.qvel[:2]))
+        wz = float(p.data.cvel[self._th][2])
+        edge = metrics['edge_deg']
+        if edge is None or speed < 5. or abs(wz) < 0.3 or edge < CARVE_MIN_EDGE_DEG:
+            return parts
+        _, (e_l, e_r) = self._plate_state(p)
+        if np.sign(e_l) != np.sign(e_r) or np.sign(wz) != -np.sign(e_l):
+            return parts                    # 두 판 엣지 방향이 다르거나 엣지 반대쪽으로 도는 중.
+        r_arc = float(np.mean(self.task._grip._rsc)) * np.cos(np.deg2rad(edge))
+        q = float(np.exp(-(np.log((speed / abs(wz)) / r_arc) / CARVE_SIGMA) ** 2))
+        parts['carve'] = CARVE_BONUS * q
+        self._stats['arc'] = self._stats.get('arc', 0.) + q
+        return parts
+
+
+RESIDUAL_SCALE = 0.3            # 잔차 정책 액션(-1~1)에 곱하는 배율. 최종 = 전문가 + 이 값 x 정책.
 
 
 class ResidualParallelEnv(ParallelTrackEnv):
@@ -543,7 +579,7 @@ class ResidualParallelEnv(ParallelTrackEnv):
 
 
 ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv, 'turn': TurnTrackEnv,
-        'parallel': ParallelTrackEnv, 'residual': ResidualParallelEnv}
+        'parallel': ParallelTrackEnv, 'residual': ResidualParallelEnv, 'carve': CarveTrackEnv}
 
 
 def main():
