@@ -69,12 +69,95 @@ class EdgeGrip:
         self._sides = tuple(units)
         self._f6 = np.zeros(6)
         self._v6 = np.zeros(6)
+        # 벡터화용 조회 배열: geom id -> 판 번호(-1 = 스키 아님), 판 번호 -> 루트 body/사이드컷.
+        self._side_of = np.full(m.ngeom, -1, dtype=int)
+        for g, side in self._geom_side.items():
+            self._side_of[g] = self._sides.index(side)
+        self._roots = np.array([self._root[s] for s in self._sides])
+        self._rsc = np.array([self._r_sidecut[s] for s in self._sides], dtype=float)
+        self._geom_body = np.array(m.geom_bodyid)
+        self._body_root = np.array(m.body_rootid)
         self.reset_metrics()
 
     def reset_metrics(self):
         self._acc = {s: dict(n=0, lat=0., tan=0., edge=0., util=0.) for s in self._sides}
 
     def step(self, physics):
+        """numpy 벡터화 버전(RESEARCH_NOTES 45번). 파이썬 접촉 루프(step_loop)가 정책 스텝 시간의
+        ~59%를 먹어서 바꿨다. 수직력은 efc_force[efc_address](elliptic cone의 첫 행 = 법선),
+        접촉점 속도는 cvel(트리 루트 질량중심 기준)에서 계산, 힘은 몸통에 합력/합모멘트로 한 번에
+        건다(APPLY_TO='thorax'와 같은 결과). APPLY_TO='segment'면 루프 버전을 쓴다."""
+        if APPLY_TO != 'thorax':
+            return self.step_loop(physics)
+        m, d = physics.model.ptr, physics.data.ptr
+        d.qfrc_applied[:] = 0.
+        ncon = d.ncon
+        if ncon == 0:
+            return
+        con = d.contact
+        g = con.geom[:ncon]
+        s1, s2 = self._side_of[g[:, 0]], self._side_of[g[:, 1]]
+        ground1 = self._geom_body[g[:, 0]] == 0
+        ground2 = self._geom_body[g[:, 1]] == 0
+        use1 = (s1 >= 0) & ground2
+        use2 = (s2 >= 0) & ground1 & ~use1
+        idx = np.nonzero(use1 | use2)[0]
+        if idx.size == 0:
+            return
+        geom = np.where(use1[idx], g[idx, 0], g[idx, 1])
+        side = self._side_of[geom]
+        sign = np.where(use1[idx], -1., 1.)[:, None]
+        n = sign * con.frame[idx, :3]                      # 지면 -> 스키 방향 법선.
+        pos = con.pos[idx]
+        # 비활성 접촉(여유 거리 밖)은 efc_address = -1. 그대로 인덱싱하면 efc_force의 마지막 값을
+        # 읽어 엉뚱한 힘이 걸리고 4스텝 만에 발산했다(mj_contactForce는 이때 0을 돌려줌).
+        addr = con.efc_address[idx]
+        N = np.where(addr >= 0, d.efc_force[np.maximum(addr, 0)], 0.)
+        # efc_force에 NaN이 든 행이 가끔 있다(루프 버전의 mj_contactForce는 유한값을 냄). 0으로.
+        N = np.nan_to_num(N, nan=0., posinf=0., neginf=0.)
+        # efc_force의 일부 행이 NaN인 순간이 있었다(판 접촉 행, 시뮬레이션은 정상 진행). 그대로 쓰면
+        # 몸통 합력 전체가 NaN이 돼 4스텝 만에 발산해서 NaN/inf는 0으로 둔다(45번).
+        N = np.nan_to_num(N, nan=0., posinf=0., neginf=0.)
+        N = np.minimum(np.maximum(N, 0.), self._n_cap)
+        body = self._geom_body[geom]
+        ey = d.xmat[body].reshape(-1, 3, 3)[:, :, 1]
+        eyn = np.sum(ey * n, axis=1)
+        phi = np.arcsin(np.minimum(np.abs(eyn), 1.))
+        ex = d.xmat[self._roots[side]].reshape(-1, 3, 3)[:, :, 0]
+        ex = ex - np.sum(ex * n, axis=1)[:, None] * n
+        ex /= np.maximum(np.linalg.norm(ex, axis=1), 1e-9)[:, None]
+        rsc = self._rsc[side]
+        kappa = np.where(rsc > 0, -np.sign(eyn) / (np.maximum(rsc, 1e-9) * np.cos(phi)), 0.)
+        theta = kappa * np.sum((pos - d.xpos[self._roots[side]]) * ex, axis=1)
+        tangent = np.cos(theta)[:, None] * ex + np.sin(theta)[:, None] * np.cross(n, ex)
+        t = np.cross(n, tangent)                           # 호의 왼쪽 법선.
+        cv = d.cvel[body]
+        v = cv[:, 3:] + np.cross(cv[:, :3], pos - d.subtree_com[self._body_root[body]])
+        v_t = v - np.sum(v * n, axis=1)[:, None] * n
+        v_lat = np.sum(v_t * t, axis=1)
+        snow = self._snow_at(float(d.xpos[self._target][0]))   # 설질 구간은 수십 cm라 몸 위치로.
+        ramp = np.clip((phi - PHI0) / (PHI1 - PHI0), 0., 1.)
+        mu = snow.edge_grip * (FLAT_GRIP_FRACTION + (1. - FLAT_GRIP_FRACTION) * ramp)
+        th = np.tanh(v_lat / V0)
+        if self._enabled:
+            f = -(mu * N * th)[:, None] * t
+            center = d.xipos[self._target]
+            force = np.nan_to_num(f.sum(axis=0))
+            torque = np.nan_to_num(np.cross(pos - center, f).sum(axis=0))
+            mujoco.mj_applyFT(m, d, force, torque, center, self._target, d.qfrc_applied)
+        for k, sname in enumerate(self._sides):
+            sel = side == k
+            if not sel.any():
+                continue
+            a = self._acc[sname]
+            a['n'] += int(sel.sum())
+            a['lat'] += float(np.abs(v_lat[sel]).sum())
+            a['tan'] += float(np.linalg.norm(v_t[sel], axis=1).sum())
+            a['edge'] += float(phi[sel].sum())
+            a['util'] += float(np.where(mu[sel] > 0., np.abs(th[sel]), 1.).sum())
+
+    def step_loop(self, physics):
+        """원래 접촉별 파이썬 루프 버전(벡터화 전, 비교/APPLY_TO='segment'용)."""
         m, d = physics.model.ptr, physics.data.ptr
         d.qfrc_applied[:] = 0.
         for i in range(d.ncon):
