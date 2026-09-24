@@ -191,7 +191,8 @@ def plot_curve(csv_path, out, stage='course'):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--minutes', type=float, default=35.)
-    ap.add_argument('--envs', type=int, default=10)
+    ap.add_argument('--envs', type=int, default=0,
+                    help='병렬 환경 수. 0이면 코어 수 - 2(이 PC 22). 워커는 수치 라이브러리 스레드 1개')
     ap.add_argument('--name', default='ppo_try1')
     ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn', 'parallel'))
     ap.add_argument('--init', default=None, help='앞 단계 model.zip 가중치로 시작(커리큘럼)')
@@ -200,6 +201,12 @@ def main():
     ap.add_argument('--log-std', type=float, default=-1.0,
                     help='초기 탐색 노이즈 log 표준편차(액션 범위 1.0rad인 speed 단계는 -2 권장)')
     args = ap.parse_args()
+    if args.envs <= 0:
+        args.envs = max((os.cpu_count() or 4) - 2, 1)
+    # 워커마다 numpy/torch가 코어 수만큼 스레드를 띄우면 환경 20여 개가 서로 경합한다(45번).
+    # spawn 워커는 부모 환경 변수를 물려받으므로 워커 생성 전에 1로 고정.
+    for var in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS'):
+        os.environ.setdefault(var, '1')
 
     import torch
     from stable_baselines3 import PPO
