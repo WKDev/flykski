@@ -31,7 +31,7 @@ from flyski_sim.tasks import SlopeSmokeTask
 from flyski_sim.terrain import SlopedMoguls
 
 CONTROL_DT = 0.01            # 정책 주기(s). 물리 PHYSICS_DT x 서브스텝.
-PHYSICS_DT = 4e-4            # 물리 타임스텝(s). 2e-4에서 올림: 판 9조각과 함께 정책 스텝 2배, 붕괴/발산 없음(45번).
+PHYSICS_DT = 2e-4            # 물리 타임스텝(s). 4e-4는 쐐기/볼록성 검사는 통과했지만 대회전 전문가 생존 7/8 -> 2/8로 망가져 되돌림(46번).
 ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
                              # 최대 0.78rad 움직여야 해서 커리큘럼 단계는 1.0을 쓴다.
 EPISODE_SECONDS = 3.0
