@@ -30,6 +30,9 @@ def make_env(rank: int, stage: str):
     return _f
 
 
+BEST_WINDOW = 50            # model_best.zip 판정에 쓰는 최근 에피소드 수.
+
+
 class LogCallback:
     """롤아웃이 끝날 때마다 최근 에피소드 통계를 CSV에 쓰고 시간 예산을 넘기면 멈춘다."""
 
@@ -57,9 +60,18 @@ class LogCallback:
                 if time.time() - outer.last_save > outer.save_every:
                     self.model.save(os.path.join(os.path.dirname(outer.path), 'model_latest.zip'))
                     outer.last_save = time.time()
+                # 최근 BEST_WINDOW 에피소드 평균 수익이 최고면 따로 저장(gs2/gs3가 도중에 무너져
+                # 마지막 모델이 최고가 아니었다, 46번).
+                recent = outer.returns[-BEST_WINDOW:]
+                if len(recent) >= BEST_WINDOW and np.mean(recent) > outer.best:
+                    outer.best = float(np.mean(recent))
+                    self.model.save(os.path.join(os.path.dirname(outer.path), 'model_best.zip'))
+                    print(f'best {outer.best:.1f} at ts={self.num_timesteps}', flush=True)
 
         self.cb = _CB()
         self.buf = []
+        self.returns = []
+        self.best = -np.inf
         self.path = path
         self.t0 = time.time()
         with open(path, 'w', newline='') as f:
@@ -71,6 +83,7 @@ class LogCallback:
         if not self.buf:
             return
         r, l, g, m, c, e, reason = zip(*self.buf)
+        self.returns = (self.returns + list(r))[-BEST_WINDOW:]
         row = [timesteps, round((time.time() - self.t0) / 60, 2), len(r), np.mean(r), np.mean(l),
                np.mean(g), np.mean(m), np.mean(c), np.mean(e), np.mean([x not in ('time', 'finish') for x in reason])]
         with open(self.path, 'a', newline='') as f:
@@ -200,6 +213,9 @@ def main():
                     help='>0이면 플루크 전문가 시범으로 행동 복제 워밍업 후 PPO(speed 단계)')
     ap.add_argument('--log-std', type=float, default=-1.0,
                     help='초기 탐색 노이즈 log 표준편차(액션 범위 1.0rad인 speed 단계는 -2 권장)')
+    ap.add_argument('--lr', type=float, default=3e-4, help='학습률(미세조정은 1e-4 이하 권장, 46번)')
+    ap.add_argument('--target-kl', type=float, default=None,
+                    help='업데이트당 KL 상한(넘으면 그 롤아웃의 남은 epoch 중단). 0.02 정도면 붕괴 방지')
     args = ap.parse_args()
     if args.envs <= 0:
         args.envs = max((os.cpu_count() or 4) - 2, 1)
@@ -219,7 +235,8 @@ def main():
     if args.bc_episodes:
         bc_obs, bc_act = collect_expert(args.stage, args.bc_episodes, args.envs, out)
     venv = SubprocVecEnv([make_env(i, args.stage) for i in range(args.envs)])
-    model = PPO('MlpPolicy', venv, n_steps=256, batch_size=640, n_epochs=5, learning_rate=3e-4,
+    model = PPO('MlpPolicy', venv, n_steps=256, batch_size=640, n_epochs=5, learning_rate=args.lr,
+                target_kl=args.target_kl,
                 gamma=0.99, gae_lambda=0.95, clip_range=0.2,
                 policy_kwargs=dict(net_arch=[256, 256], log_std_init=args.log_std), verbose=0, seed=0)
     if args.init:
