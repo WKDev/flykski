@@ -207,7 +207,7 @@ def main():
     ap.add_argument('--envs', type=int, default=0,
                     help='병렬 환경 수. 0이면 코어 수 - 2(이 PC 22). 워커는 수치 라이브러리 스레드 1개')
     ap.add_argument('--name', default='ppo_try1')
-    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn', 'parallel'))
+    ap.add_argument('--stage', default='course', choices=('course', 'speed', 'turn', 'parallel', 'residual'))
     ap.add_argument('--init', default=None, help='앞 단계 model.zip 가중치로 시작(커리큘럼)')
     ap.add_argument('--bc-episodes', type=int, default=0,
                     help='>0이면 플루크 전문가 시범으로 행동 복제 워밍업 후 PPO(speed 단계)')

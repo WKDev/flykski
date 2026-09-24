@@ -520,8 +520,30 @@ class ParallelTrackEnv(TurnTrackEnv):
         return parts
 
 
+RESIDUAL_SCALE = 0.3             # 잔차 정책 액션(-1~1)에 곱하는 배율. 최종 = 전문가 + 이 값 x 정책.
+
+
+class ResidualParallelEnv(ParallelTrackEnv):
+    """패럴렐 전문가(복구 모드 포함) 액션 위에 정책이 보정값만 더한다(47번). 정책 출력이 0이면
+    전문가 그대로라 학습 시작부터 전문가 수준(대회전 7/8)에서 출발한다. 관측/보상은 ParallelTrackEnv와 같다."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from flyski_sim.experts import ParallelExpert
+        self.expert = ParallelExpert(self)
+
+    def _on_reset(self):
+        super()._on_reset()
+        self.expert.last_u = 0.
+        self.expert.recovering = 0.
+
+    def step(self, action):
+        base = self.expert(None)
+        return super().step(np.clip(base + RESIDUAL_SCALE * np.asarray(action, dtype=float), -1., 1.))
+
+
 ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv, 'turn': TurnTrackEnv,
-        'parallel': ParallelTrackEnv}
+        'parallel': ParallelTrackEnv, 'residual': ResidualParallelEnv}
 
 
 def main():
