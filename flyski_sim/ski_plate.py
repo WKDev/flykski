@@ -19,6 +19,8 @@ RESEARCH_NOTES.md 32번. 기존 N=6(다리당 미니스키, `ski_attachment.py`)
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import mujoco
 import numpy as np
 from dm_control import mjcf
@@ -52,6 +54,8 @@ _LEG_BODY_PREFIXES = ('coxa', 'femur', 'tibia', 'tarsus', 'claw')
 USE_FILLET = False
 # 바인딩(허리)을 더 잘록하게: 프로파일 사이드컷 깊이 x 이 값(사용자 요청, 37번).
 _SIDECUT_DEPTH_SCALE = 2.0
+SIDECUT_TARGET_R_CM = 5.0    # 숫자면 판 사이드컷 반경을 이 값(cm)으로: 허리 폭은 그대로 두고 팁/테일을
+                             # 넓힌다(47번, 카빙: gs4 턴 반경 ~4cm에 맞춤). None이면 프로파일 폭 x _SIDECUT_DEPTH_SCALE(반경 ~16cm).
 COUPLE_BENDING = True      # 판 전체 굽힘/비틀림을 한 값으로 묶음(볼록성).
 _PLATE_RGBA = {'left': (0.45, 1.0, 0.05, 1.0), 'right': (1.0, 0.15, 0.75, 1.0)}
 
@@ -112,6 +116,19 @@ def plate_sidecut_radius_cm(profile: SkiProfile, length_cm: float) -> float:
     return float(length_cm ** 2 / (8 * max(depth, 1e-6)))
 
 
+def _sidecut_shape(profile: SkiProfile, length_cm: float) -> SkiProfile:
+    """폭 계산(_width_at, plate_sidecut_radius_cm)에 쓸 프로파일. SIDECUT_TARGET_R_CM이면 허리
+    (_waist_cm)는 그대로, 팁/테일에 같은 폭을 더해 반경 R = L^2 / (8 * 깊이)를 맞춘다."""
+    if SIDECUT_TARGET_R_CM is None:
+        return profile
+    waist = _waist_cm(profile)
+    mean_end = waist + 2 * length_cm ** 2 / (8 * SIDECUT_TARGET_R_CM)
+    delta = mean_end - (profile.width_tip_cm + profile.width_tail_cm) / 2
+    # _waist_cm이 원래 허리를 돌려주도록 프로파일 허리 값도 역산.
+    return replace(profile, width_tip_cm=profile.width_tip_cm + delta, width_tail_cm=profile.width_tail_cm + delta,
+                   width_waist_cm=mean_end - (mean_end - waist) / _SIDECUT_DEPTH_SCALE)
+
+
 def attach_side_plates(walker, profile: SkiProfile,
                        n_segments: int | None = N_SEGMENTS) -> dict[str, SkiUnit]:
     """walker의 좌/우 다리 3개씩에 휘는 스키 플레이트를 하나씩 붙인다."""
@@ -139,6 +156,7 @@ def attach_side_plates(walker, profile: SkiProfile,
                               tip_z - BINDING_HEIGHT_CM - HALF_THICKNESS_CM])
 
         length = span + OVERHANG_SCALE * profile.length_cm
+        shape = _sidecut_shape(profile, length)
         if n_segments is None:
             n_segments = 2 * max(int(round(length / _SEG_LEN_CM / 2)), 1) + 1
         seg_len = length / n_segments
@@ -171,7 +189,7 @@ def attach_side_plates(walker, profile: SkiProfile,
                 kw['quat'] = tuple(quat)
             body = parent.add('body', **kw)
             s = (idx - m) / m                                  # -1(테일)~+1(팁).
-            half_w = _width_at(profile, s) / 2
+            half_w = _width_at(shape, s) / 2
             r = HALF_THICKNESS_CM
             # 필렛: 가운데 얇은 box + 양쪽 긴 모서리 캡슐(반지름 = 판 반두께). 옆 엣지와
             # 조각 끝이 둥글어서 직진/정지 때 각진 모서리가 설면에 걸리지 않는다. 엣지
@@ -302,8 +320,8 @@ def attach_side_plates(walker, profile: SkiProfile,
             for lb in leg_bodies:
                 model.contact.add('exclude', body1=seg, body2=lb)
 
-        area = length * np.mean([_width_at(profile, (i - m) / m) for i in range(n_segments)])
+        area = length * np.mean([_width_at(shape, (i - m) / m) for i in range(n_segments)])
         units[side] = SkiUnit(name=side, root_body=root, bodies=bodies, geoms=geoms,
                               half_length_cm=length / 2, area_cm2=float(area),
-                              sidecut_radius_cm=plate_sidecut_radius_cm(profile, length))
+                              sidecut_radius_cm=plate_sidecut_radius_cm(shape, length))
     return units
