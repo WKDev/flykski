@@ -30,7 +30,8 @@ from flyski_sim.ski_profiles import SKI_PROFILES
 from flyski_sim.tasks import SlopeSmokeTask
 from flyski_sim.terrain import SlopedMoguls
 
-CONTROL_DT = 0.01            # 정책 주기(s). 물리 2e-4 x 50 서브스텝.
+CONTROL_DT = 0.01            # 정책 주기(s). 물리 PHYSICS_DT x 서브스텝.
+PHYSICS_DT = 4e-4            # 물리 타임스텝(s). 2e-4에서 올림: 판 9조각과 함께 정책 스텝 2배, 붕괴/발산 없음(45번).
 ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
                              # 최대 0.78rad 움직여야 해서 커리큘럼 단계는 1.0을 쓴다.
 EPISODE_SECONDS = 3.0
@@ -63,7 +64,7 @@ class SkiCourseTask(SlopeSmokeTask):
         super().__init__(ski_profile=SKI_PROFILES[profile], walker=fruitfly.FruitFly,
                          arena=arena, time_limit=EPISODE_SECONDS, joint_filter=0.,
                          claw_friction=1.0, spawn_xy=(-c['dim'][0] + c['spawn_margin'], 0.))
-        self.set_timesteps(control_timestep=CONTROL_DT, physics_timestep=2e-4)
+        self.set_timesteps(control_timestep=CONTROL_DT, physics_timestep=PHYSICS_DT)
         self.odor = OdorField(gate_spacing_cm=c['gate_spacing'], gate_amplitude_cm=c['gate_amplitude'],
                               arena_dim=c['dim'], pass_radius_cm=c['pass_radius'], seed=seed)
         self._slope_n = np.array([np.sin(np.deg2rad(c['slope_deg'])), 0.,

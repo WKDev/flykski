@@ -29,7 +29,8 @@ from flyski_sim.ski_stance import compute_ski_stance
 
 SIDES = ('left', 'right')
 N_SEGMENTS = None         # None이면 조각 길이 ~_SEG_LEN_CM이 되게 홀수 개(가운데 조각이 root).
-_SEG_LEN_CM = 0.062
+_SEG_LEN_CM = 0.09            # 조각 길이 목표(cm). 0.062(15조각)에서 0.09(9조각)로: 정책 스텝 1.4배,
+                             # 볼록성/제동/카빙 검사 재통과 확인(45번).
 # 판 길이 = T1~T3 발끝 거리 + OVERHANG_SCALE x 프로파일 길이. T1/T2/T3 세 점이 판을 잡아
 # 휨을 다리가 정하므로(스케이트에 가까움, RESEARCH_NOTES 38번) 발 밖으로 나온 팁/테일이
 # 자유롭게 휘도록 길게 한다. 쐐기에서 좌우 판 팁이 닿지 않는 범위에서 고름.
