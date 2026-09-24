@@ -402,10 +402,11 @@ TURN_WEIGHTS = dict(
 )
 TURN_SIGMA_Y = 1.0             # cm
 INITIAL_SPEED = 8.             # cm/s, 폴라인 방향 초기 속도.
-TURN_PSI_MAX_DEG = (55., 65.)  # 폴라인 대비 최대 진행각. 목표 70~85(턴당 140~170°)는 전문가가 첫 턴에서
-                               # 90° 넘게 돌아 멈춰서, 55~65(턴당 110~130°)부터 커리큘럼(42번).
+TURN_PSI_MAX_DEG = (55., 85.)  # 폴라인 대비 최대 진행각(턴당 110~170°). 복구 모드 전 전문가는 70~85에서 첫 턴 뒤
+                               # 90° 넘게 돌아 멈췄다. 복구 모드 후엔 70~85도 12초 버팀(43번).
 TURN_PERIOD_CM = (50., 80.)    # 경로 호 길이 기준 한 주기(좌+우 턴).
-TURN_MAX_HEADING_ERR_DEG = 80.
+TURN_MAX_HEADING_ERR_DEG = 150.   # 43번 이전 80(멈추면 바로 끝나 복구를 못 배움).
+STALL_SECONDS = 2.
 
 
 class TurnTrackEnv(SpeedControlEnv):
@@ -420,6 +421,7 @@ class TurnTrackEnv(SpeedControlEnv):
 
     def _on_reset(self):
         self._cmd = 10.
+        self._stall = 0
         p = self.env.physics
         pos = p.data.xpos[self._th]
         # 에피소드마다 첫 턴 방향/최대 진행각/주기를 무작위로(궤적 하나만 외우지 않게).
@@ -459,11 +461,18 @@ class TurnTrackEnv(SpeedControlEnv):
 
     def _termination(self, p):
         reason = SkiCourseEnv._termination(self, p)
-        # 착지(처음 0.2초) 동안은 방향 오차로 끝내지 않는다(착지 충격에 요가 튐).
-        if (reason is None and self._stats['steps'] > 20
-                and abs(self._errors(p)[0]) > np.deg2rad(TURN_MAX_HEADING_ERR_DEG)):
+        if reason is not None:
+            return reason
+        # 방향 오차가 커도 바로 끝내지 않고 STALL_SECONDS 넘게 멈춰 있을 때만 끝낸다. 멈춰도
+        # 엣지를 풀고 판을 틀어 다시 출발할 수 있어서(복구, 43번) 그걸 배울 기회를 준다.
+        # 완전히 거꾸로(방향 오차 > 150°) 가면 끝낸다.
+        speed = float(np.linalg.norm(p.data.qvel[:2]))
+        self._stall = self._stall + 1 if speed < 1. else 0
+        if self._stall > int(STALL_SECONDS / CONTROL_DT):
+            return 'stalled'
+        if self._stats['steps'] > 20 and abs(self._errors(p)[0]) > np.deg2rad(TURN_MAX_HEADING_ERR_DEG):
             return 'heading'
-        return reason
+        return None
 
 
 PARALLEL_BONUS = 1.0            # 41번 이전 0.4(패럴렐 비율 33%에 그침).

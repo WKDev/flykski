@@ -132,11 +132,50 @@ def build_parallel_table(env) -> dict:
     return table
 
 
-class ParallelExpert(SteerExpert):
-    """SteerExpert와 같은 되먹임, 자세 표만 패럴렐(두 판 같은 쪽 엣지)."""
+# 멈춤 복구(RESEARCH_NOTES 43번): 폴라인과 직각으로 산쪽 엣지에 걸려 멈추면, 사람처럼 엣지를
+# 풀고 판을 폴라인 쪽으로 틀고(피벗) 몸을 골짜기 쪽으로 던진다. recovery_test에서 이 조합만
+# 30cm/s까지 다시 출발했다(엣지만 풀면 그대로 멈춤).
+RECOVER_SPEED = 2.              # 이 속력 아래 + 몸 방향이 폴라인에서 RECOVER_YAW_DEG 넘게 벗어나면 복구.
+RECOVER_YAW_DEG = 60.
+RECOVER_EXIT_SPEED = 6.
+RECOVER_PIVOT_DEG, RECOVER_EDGE_DEG, RECOVER_COM_CM = 20., 5., 0.04
 
-    def __init__(self, env, table: dict | None = None):
+
+def build_recover_actions(env) -> dict:
+    """{+1: 몸이 왼쪽(+요)을 향해 멈췄을 때, -1: 오른쪽}. 폴라인은 +1이면 몸의 오른쪽."""
+    out = {}
+    for side in (+1., -1.):
+        yaw = -side * RECOVER_PIVOT_DEG                 # 팁을 폴라인(골짜기) 쪽으로.
+        roll = side * RECOVER_EDGE_DEG                  # 골짜기 쪽 엣지.
+        shift = -np.array([0., -side * RECOVER_COM_CM, 0.])   # 몸을 골짜기 쪽으로.
+        pose, _ = solve_plate_pose(env.task.walker, {'left': yaw, 'right': yaw}, {'left': roll, 'right': roll},
+                                   shift_cm={'left': shift, 'right': shift})
+        off = np.array([pose[n] - env._stance_q[i] for i, n in enumerate(env._leg_names)])
+        out[side] = np.clip(off / env._action_scale, -1., 1.)
+    return out
+
+
+class ParallelExpert(SteerExpert):
+    """SteerExpert와 같은 되먹임, 자세 표만 패럴렐(두 판 같은 쪽 엣지). 멈추면 복구 모드."""
+
+    def __init__(self, env, table: dict | None = None, recover: dict | None = None):
         super().__init__(env, table if table is not None else build_parallel_table(env))
+        self.recover = recover if recover is not None else build_recover_actions(env)
+        self.recovering = 0.
+
+    def __call__(self, obs=None) -> np.ndarray:
+        p = self.env.env.physics
+        speed = float(np.linalg.norm(p.data.qvel[:2]))
+        yaw = self.env._yaw(p)
+        if self.recovering:
+            if speed > RECOVER_EXIT_SPEED or abs(yaw) < np.deg2rad(30.):
+                self.recovering = 0.
+        elif (self.env._stats['steps'] > 20 and speed < RECOVER_SPEED
+              and abs(yaw) > np.deg2rad(RECOVER_YAW_DEG)):
+            self.recovering = float(np.sign(yaw))
+        if self.recovering:
+            return self.recover[self.recovering]
+        return super().__call__(obs)
 
 
 def expert_for(stage: str):
