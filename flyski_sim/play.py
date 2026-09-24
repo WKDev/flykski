@@ -11,7 +11,7 @@
 창에 목표(DESIRED, 초록)와 실제(ACTUAL, 빨강) 궤적을 그린다.
 - speed 단계: 목표 = 출발점에서 폴라인(+x)으로 곧게 내려가는 선, 초록 공 = 속도 명령을
   정확히 따랐다면 지금 있어야 할 위치(명령 속력 적분). 빨간 선/공 = 실제 몸 궤적/위치.
-- turn 단계: 목표 = S자 궤적(초록 공 = 지금 x에서 목표 y).
+- turn/parallel 단계: 목표 = 대회전 경로(초록 공 = 가장 가까운 경로점).
 - course 단계: 목표 = 스폰 -> 냄새 게이트 중심들을 잇는 선(노란 공 = 게이트, 활성은 크게).
 화면 왼쪽 위에 명령/실제 속력, 목표 대비 앞뒤/옆 오차가 뜬다. 에피소드가 끝나면 자동
 리셋. macOS는 mjpython으로 실행.
@@ -107,10 +107,11 @@ class TrajectoryOverlay:
         cur = env.env.physics.data.xpos[env._th][:2]
         if hasattr(env, 'reference'):                    # turn 단계: S자 목표 궤적.
             ref = env.reference
-            end_x = float(self.arena._dim[0]) - 1.
-            xs = np.linspace(self.start[0], end_x, 120)
-            self._polyline(scn, [self._pt((x, ref.y(x))) for x in xs], GREEN)
-            desired = np.array([cur[0], ref.y(cur[0])])
+            step = 20                                     # 경로점 0.05cm x 20 = 1cm 간격.
+            pts = [self._pt((x, y)) for x, y in zip(ref.x[::step], ref.yy[::step])
+                   if x < float(self.arena._dim[0]) - 1.]
+            self._polyline(scn, pts[:400], GREEN)
+            desired = ref.nearest(float(cur[0]), float(cur[1]))[2]
             self._ball(scn, self._pt(desired), 0.05, GREEN)
         elif hasattr(env, '_next_switch'):               # speed 단계: 폴라인 + 명령 적분 위치.
             end_x = float(self.arena._dim[0]) - 1.

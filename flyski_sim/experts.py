@@ -62,6 +62,7 @@ STEER_COM_CM = 0.06            # 몸을 바깥 판 쪽으로 옮기는 양(cm, �
 STEER_EDGE_DEG = 12.           # 바깥 판 안쪽 엣지각(직진일 땐 양쪽 다 이 값).
 STEER_US = np.linspace(-1., 1., 9)
 STEER_SMOOTH = 0.2              # 1차 저역 필터 계수(스텝당).
+LOOKAHEAD_CM = 4.               # 선행 주시 거리(경로 호 길이, cm). 0이면 가장 가까운 점.
 K_PSI, K_Y, K_R = 2.5, 0.3, 0.3  # u = K_PSI * 방향 오차(rad) + K_Y * 옆 오차(cm) - K_R * 요레이트(rad/s)
 
 
@@ -89,6 +90,15 @@ class SteerExpert:
 
     def __call__(self, obs=None) -> np.ndarray:
         e_psi, e_y = self.env._errors(self.env.env.physics)
+        ref = getattr(self.env, 'reference', None)
+        if LOOKAHEAD_CM > 0 and hasattr(ref, 'psi'):
+            # 선행 주시: 몇 cm 앞 경로의 진행 방향을 목표로(대회전에서 턴을 늦게 끊어 오르막으로
+            # 100° 넘게 돌다 멈추던 오버슈트 방지, 42번).
+            i = min(ref._i + int(LOOKAHEAD_CM / 0.05), len(ref.psi) - 1)
+            p = self.env.env.physics
+            v = p.data.qvel[:2]
+            head = float(np.arctan2(v[1], v[0])) if np.linalg.norm(v) > 3. else self.env._yaw(p)
+            e_psi = float(np.angle(np.exp(1j * (ref.psi[i] - head))))
         p = self.env.env.physics
         yaw_rate = float(p.data.cvel[self.env._th][2])
         u = float(np.clip(K_PSI * e_psi + K_Y * e_y - K_R * yaw_rate, -1., 1.))

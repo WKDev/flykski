@@ -74,6 +74,11 @@ class SlopeSmokeTask(TemplateTask):
         for name, angle in self._stance.items():
             physics.named.data.qpos[f'walker/{name}'] = angle
         new_pos = (x, y, terrain_h + _SPAWN_CLEARANCE_CM)
+        # 급경사(25°)에서 수평 자세로 스폰하면 0.81cm 판 테일과 몸이 바로 설면에 닿았다.
+        # 평균 경사만큼 y축 둘레로 기울여 몸 z축을 사면 법선에 맞춘다(42번).
+        slope = np.deg2rad(getattr(self._arena, '_mean_slope_deg', 0.))
+        if slope:
+            quat = np.array([np.cos(slope / 2), 0., np.sin(slope / 2), 0.])
         self._walker.set_pose(physics, position=new_pos, quaternion=quat)
         if hasattr(self._arena, 'apply_snow_friction_at'):
             self._arena.apply_snow_friction_at(physics, x)

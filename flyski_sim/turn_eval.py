@@ -31,7 +31,7 @@ def run(policy, env, seed=0):
     side = {m.name2id(g.full_identifier, 'geom'): s for s, u in env.task.skis.items() for g in u.geoms}
     jq = {j: m.jnt_qposadr[m.name2id(f'walker/{j}', 'joint')] for j in JOINTS}
     f6 = np.zeros(6)
-    log = {k: [] for k in ('x', 'y', 'yref', 'u', 'yaw', 'com', 'share', 'reason')}
+    log = {k: [] for k in ('x', 'y', 'yref', 'cross', 'u', 'yaw', 'com', 'share', 'reason')}
     log.update({j: [] for j in JOINTS})
     total = 0.
     while True:
@@ -42,6 +42,7 @@ def run(policy, env, seed=0):
         log['x'].append(pos[0])
         log['y'].append(pos[1])
         log['yref'].append(env.reference.y(pos[0]))
+        log['cross'].append(env._errors(p)[1])             # 경로까지 수직 거리(+ = 경로가 왼쪽).
         log['u'].append(getattr(policy, 'last_u', np.nan))
         log['yaw'].append(np.degrees(env._yaw(p)))
         for j in JOINTS:
@@ -63,6 +64,7 @@ def run(policy, env, seed=0):
             log['reason'] = info['reason']
             break
     log['return'] = total
+    log['ref'] = env.reference
     return log
 
 
@@ -74,7 +76,9 @@ def plot(log, name, title):
     x = np.array(log['x']) - log['x'][0]
     t = np.arange(len(x)) * 0.01
     fig, ax = plt.subplots(1, 4, figsize=(18, 4))
-    ax[0].plot(np.array(log['yref']) - log['y'][0], x, 'g', label='desired')
+    ref = log['ref']
+    keep = ref.x <= log['x'][-1] + 10.
+    ax[0].plot(ref.yy[keep] - log['y'][0], ref.x[keep] - log['x'][0], 'g', label='desired')
     ax[0].plot(np.array(log['y']) - log['y'][0], x, 'r', label='actual')
     ax[0].invert_yaxis()
     ax[0].set_xlabel('y (cm, + = left)')
@@ -121,9 +125,9 @@ def main():
         policy = SteerExpert(env)
         name, title = 'steer_expert', 'steer expert'
     log = run(policy, env, args.seed)
-    rms = float(np.sqrt(np.mean((np.array(log['y']) - np.array(log['yref'])) ** 2)))
+    rms = float(np.sqrt(np.mean(np.square(log['cross']))))
     print(f'{title}: return {log["return"]:.1f}, {len(log["x"])} steps, end {log["reason"]}, '
-          f'lateral rms {rms:.2f}cm, downhill {log["x"][-1] - log["x"][0]:.1f}cm, '
+          f'cross-track rms {rms:.2f}cm, downhill {log["x"][-1] - log["x"][0]:.1f}cm, '
           f'joint range(deg) {[round(float(np.degrees(np.ptp(log[j]))), 1) for j in JOINTS]}, '
           f'COM range {np.nanmin(log["com"]):+.2f}..{np.nanmax(log["com"]):+.2f}, '
           f'right load {np.nanmin(log["share"]):.2f}..{np.nanmax(log["share"]):.2f}')

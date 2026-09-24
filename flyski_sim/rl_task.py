@@ -37,7 +37,7 @@ EPISODE_SECONDS = 3.0
 # 코스(반길이, 반폭) cm. 41번에 60x8, 사용자 요청으로 200x50(400cm x 100cm)으로 크게.
 # 격자는 cm당 15점 유지: 평면이어도 2점(0.5cm 칸)이면 판 조각(0.06cm)보다 칸이 커서 접촉이
 # 들쭉날쭉해져 전문가가 코스를 벗어났다. 15점(격자 900만 개)도 생성 7초라 괜찮음(41번).
-COURSE = dict(dim=(200., 50.), grid_density=15, slope_deg=15., gate_spacing=8., gate_amplitude=3.,
+COURSE = dict(dim=(200., 50.), grid_density=15, slope_deg=20., gate_spacing=8., gate_amplitude=3.,
               pass_radius=1.5, spawn_margin=2.)
 
 REWARD_WEIGHTS = dict(
@@ -356,18 +356,40 @@ class SpeedControlEnv(SkiCourseEnv):
         return reason
 
 
-class SCurve:
-    """폴라인(+x)을 따라 반복되는 완만한 S자 목표 궤적 y(x) = A sin(2 pi (x - x0) / L)."""
+class TurnPath:
+    """대회전(GS)형 목표 경로. 호 길이 s를 따라 진행 방향이 psi(s) = PSI sin(2 pi s / P)로
+    폴라인(+x) 기준 +-PSI까지 번갈아 꺾인다. PSI 70~85°면 턴 하나에 방향이 140~170° 바뀌고
+    사면을 가로질렀다(트래버스) 돌아온다. 41번 이전의 S자(y = A sin(kx))는 최대 ~30°라
+    직활강에 가까웠다(사용자 지적).
+    """
 
-    def __init__(self, x0: float, y0: float = 0., amplitude: float = 3., wavelength: float = 40.):
-        self.x0, self.y0, self.a, self.k = x0, y0, amplitude, 2 * np.pi / wavelength
+    def __init__(self, x0: float, y0: float, psi_max: float, period: float,
+                 length: float = 800., ds: float = 0.05):
+        s = np.arange(0., length, ds)
+        self.psi = psi_max * np.sin(2 * np.pi * s / period)
+        self.x = x0 + np.concatenate([[0.], np.cumsum(np.cos(self.psi[:-1]) * ds)])
+        self.yy = y0 + np.concatenate([[0.], np.cumsum(np.sin(self.psi[:-1]) * ds)])
+        self.psi_max, self.period = psi_max, period
+        self._i = 0
 
     def y(self, x):
-        return self.y0 + self.a * np.sin(self.k * (x - self.x0))
+        """같은 x에서 경로 y(그림/로그용, |psi| < 90°라 x는 단조 증가)."""
+        return float(np.interp(x, self.x, self.yy))
 
     def heading(self, x):
-        """목표 진행 방향(rad, + = 왼쪽)."""
-        return float(np.arctan(self.a * self.k * np.cos(self.k * (x - self.x0))))
+        """같은 x에서 경로 진행 방향(rad, + = 왼쪽)."""
+        return float(np.interp(x, self.x, self.psi))
+
+    def nearest(self, x, y, window=4000):
+        """가장 가까운 경로점의 (진행 방향, 크로스트랙 오차 cm, 점 좌표). 오차 + = 경로가 왼쪽."""
+        lo = max(self._i - window // 4, 0)
+        hi = min(self._i + window, len(self.x))
+        d2 = (self.x[lo:hi] - x) ** 2 + (self.yy[lo:hi] - y) ** 2
+        i = lo + int(np.argmin(d2))
+        self._i = i
+        psi = self.psi[i]
+        cross = float(-(self.x[i] - x) * np.sin(psi) + (self.yy[i] - y) * np.cos(psi))
+        return float(psi), cross, np.array([self.x[i], self.yy[i]])
 
 
 TURN_WEIGHTS = dict(
@@ -380,7 +402,9 @@ TURN_WEIGHTS = dict(
 )
 TURN_SIGMA_Y = 1.0             # cm
 INITIAL_SPEED = 8.             # cm/s, 폴라인 방향 초기 속도.
-S_WAVELENGTH = (25., 40.)      # S자 파장 범위(cm). 41번 이전 35~50.
+TURN_PSI_MAX_DEG = (55., 65.)  # 폴라인 대비 최대 진행각. 목표 70~85(턴당 140~170°)는 전문가가 첫 턴에서
+                               # 90° 넘게 돌아 멈춰서, 55~65(턴당 110~130°)부터 커리큘럼(42번).
+TURN_PERIOD_CM = (50., 80.)    # 경로 호 길이 기준 한 주기(좌+우 턴).
 TURN_MAX_HEADING_ERR_DEG = 80.
 
 
@@ -391,16 +415,17 @@ class TurnTrackEnv(SpeedControlEnv):
     나중엔 후각(게이트)이 이 목표를 대신한다.
     """
 
-    episode_seconds = 9.0             # 코스 120cm(41번 이전 60cm, 4초면 끝나 턴이 2~3번뿐).
+    episode_seconds = 12.0            # 대회전 경로 1.5~2주기(턴 3~4번).
     fall_penalty = TURN_WEIGHTS['fall']
 
     def _on_reset(self):
         self._cmd = 10.
         p = self.env.physics
         pos = p.data.xpos[self._th]
-        # 에피소드마다 S자 방향/진폭/파장을 무작위로(궤적 하나만 외우지 않게).
-        amp = self._rng.uniform(2., 4.) * self._rng.choice([-1., 1.])
-        self.reference = SCurve(float(pos[0]), float(pos[1]), amp, self._rng.uniform(*S_WAVELENGTH))
+        # 에피소드마다 첫 턴 방향/최대 진행각/주기를 무작위로(궤적 하나만 외우지 않게).
+        psi_max = np.deg2rad(self._rng.uniform(*TURN_PSI_MAX_DEG)) * self._rng.choice([-1., 1.])
+        self.reference = TurnPath(float(pos[0]), float(pos[1]), psi_max,
+                                  self._rng.uniform(*TURN_PERIOD_CM))
         # 브레이크로 시작하지 않고 11자로 이미 달리는 상태에서 시작(사용자 요청, 39번).
         slope = np.deg2rad(COURSE['slope_deg'])
         p.data.qvel[:3] = INITIAL_SPEED * np.array([np.cos(slope), 0., -np.sin(slope)])
@@ -412,9 +437,9 @@ class TurnTrackEnv(SpeedControlEnv):
         pos = p.data.xpos[self._th]
         v = p.data.qvel[:2]
         head = float(np.arctan2(v[1], v[0])) if np.linalg.norm(v) > 3. else self._yaw(p)
-        e_psi = float(np.angle(np.exp(1j * (self.reference.heading(pos[0]) - head))))
-        e_y = float(self.reference.y(pos[0]) - pos[1])
-        return e_psi, e_y
+        psi_path, cross, _ = self.reference.nearest(float(pos[0]), float(pos[1]))
+        e_psi = float(np.angle(np.exp(1j * (psi_path - head))))
+        return e_psi, cross
 
     def _track_obs(self):
         if not hasattr(self, 'reference'):
@@ -457,7 +482,7 @@ class ParallelTrackEnv(TurnTrackEnv):
     판정 대상 스텝 수를 누적한다(로그 carve 칸 = 패럴렐 스텝 수).
     """
 
-    stance_width = 0.85               # 좁을수록 패럴렐 비율 높고 추종은 약간 나빠짐(41번).
+    stance_width = 1.0                # 0.85면 패럴렐 비율은 높지만 엣지 0 주행 드리프트가 더 커서(78도/0.7초) 되돌림(42번).
 
     def _plate_state(self, p):
         n = self.task._slope_n
@@ -471,8 +496,8 @@ class ParallelTrackEnv(TurnTrackEnv):
 
     def _task_reward(self, p, a, metrics, odor):
         parts = super()._task_reward(p, a, metrics, odor)
-        x = float(p.data.xpos[self._th][0])
-        if abs(self.reference.heading(x)) < np.deg2rad(PARALLEL_TURN_HEADING_DEG):
+        pos = p.data.xpos[self._th]
+        if abs(self.reference.nearest(float(pos[0]), float(pos[1]))[0]) < np.deg2rad(PARALLEL_TURN_HEADING_DEG):
             parts['parallel'] = 0.
             return parts
         wedge, (e_l, e_r) = self._plate_state(p)
