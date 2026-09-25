@@ -556,7 +556,39 @@ class CarveTrackEnv(ParallelTrackEnv):
         return parts
 
 
-RESIDUAL_SCALE = 0.3            # 잔차 정책 액션(-1~1)에 곱하는 배율. 최종 = 전문가 + 이 값 x 정책.
+RACE_PROGRESS_PER_CM = 5.       # 경로를 따라 전진한 호 길이 1cm당 보상.
+RACE_CORRIDOR_CM = 3.0          # 경로에서 이만큼 넘게 벗어나면 게이트 놓침 = 실격(종료 + 넘어짐 벌점). 1.5면 새 물리(48번)에서 carve1이 8/8 초반 실격.
+RACE_CTRL = -0.01
+
+
+class RaceTrackEnv(CarveTrackEnv):
+    """커리큘럼 5단계(경주, 48번): 보상은 결과만. 경로(게이트 통로)를 벗어나지 않고 빨리 내려가기.
+
+    자세(패럴렐, 엣지각), 카빙(호 반경)에 대한 보상은 없다. 옆미끄럼은 그립 마찰로 에너지를 잃어
+    느려지므로, 물리가 맞다면 카빙은 보상 없이도 빠른 방법으로 나와야 한다. 패럴렐/arc 통계는
+    비교용으로만 계속 쌓는다(부모 _task_reward를 부르고 보상은 버림). 관측/스탠스는 ParallelTrackEnv와
+    같아서 carve1 등의 가중치로 시작할 수 있다.
+    """
+
+    def _on_reset(self):
+        super()._on_reset()
+        self._s_prev = 0.
+
+    def _task_reward(self, p, a, metrics, odor):
+        super()._task_reward(p, a, metrics, odor)            # 통계(track/carve/arc)만.
+        s = self.reference._i * 0.05                       # TurnPath 경로점 간격 ds = 0.05cm.
+        ds = float(np.clip(s - self._s_prev, -0.5, 0.5))   # 경로 인덱스가 튀는 경우 방지.
+        self._s_prev = s
+        return dict(progress=RACE_PROGRESS_PER_CM * ds, ctrl=RACE_CTRL * float(np.mean(a ** 2)))
+
+    def _termination(self, p):
+        reason = super()._termination(p)
+        if reason is None and abs(self._errors(p)[1]) > RACE_CORRIDOR_CM:
+            return 'gate'
+        return reason
+
+
+RESIDUAL_SCALE = 0.3           # 잔차 정책 액션(-1~1)에 곱하는 배율. 최종 = 전문가 + 이 값 x 정책.
 
 
 class ResidualParallelEnv(ParallelTrackEnv):
@@ -579,7 +611,8 @@ class ResidualParallelEnv(ParallelTrackEnv):
 
 
 ENVS = {'course': SkiCourseEnv, 'speed': SpeedControlEnv, 'turn': TurnTrackEnv,
-        'parallel': ParallelTrackEnv, 'residual': ResidualParallelEnv, 'carve': CarveTrackEnv}
+        'parallel': ParallelTrackEnv, 'residual': ResidualParallelEnv, 'carve': CarveTrackEnv,
+        'race': RaceTrackEnv}
 
 
 def main():
