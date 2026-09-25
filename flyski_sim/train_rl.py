@@ -217,6 +217,8 @@ def main():
     ap.add_argument('--lr', type=float, default=3e-4, help='학습률(미세조정은 1e-4 이하 권장, 46번)')
     ap.add_argument('--target-kl', type=float, default=None,
                     help='업데이트당 KL 상한(넘으면 그 롤아웃의 남은 epoch 중단). 0.02 정도면 붕괴 방지')
+    ap.add_argument('--gamma', type=float, default=0.99,
+                    help='할인율. 0.99 = 약 1초 앞(100스텝). race는 0.995(턴 하나)를 권장(48번)')
     args = ap.parse_args()
     if args.envs <= 0:
         args.envs = max((os.cpu_count() or 4) - 2, 1)
@@ -238,7 +240,7 @@ def main():
     venv = SubprocVecEnv([make_env(i, args.stage) for i in range(args.envs)])
     model = PPO('MlpPolicy', venv, n_steps=256, batch_size=640, n_epochs=5, learning_rate=args.lr,
                 target_kl=args.target_kl,
-                gamma=0.99, gae_lambda=0.95, clip_range=0.2,
+                gamma=args.gamma, gae_lambda=0.95, clip_range=0.2,
                 policy_kwargs=dict(net_arch=[256, 256], log_std_init=args.log_std), verbose=0, seed=0)
     if args.init:
         prev = PPO.load(args.init, device='cpu')

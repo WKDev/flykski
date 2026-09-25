@@ -559,6 +559,8 @@ class CarveTrackEnv(ParallelTrackEnv):
 RACE_PROGRESS_PER_CM = 5.       # 경로를 따라 전진한 호 길이 1cm당 보상.
 RACE_CORRIDOR_CM = 3.0          # 경로에서 이만큼 넘게 벗어나면 게이트 놓침 = 실격(종료 + 넘어짐 벌점). 1.5면 새 물리(48번)에서 carve1이 8/8 초반 실격.
 RACE_CTRL = -0.01
+RACE_FAIL_PENALTY = -100.       # 실격/넘어짐. -20(TURN)이면 턴 하나 진행 보상보다 작아 race1/race2가 빠르게 달리다
+                                # 통로를 벗어나는 쪽으로 무너졌다(10판 중 7판 실격, 48번).
 
 
 class RaceTrackEnv(CarveTrackEnv):
@@ -567,8 +569,10 @@ class RaceTrackEnv(CarveTrackEnv):
     자세(패럴렐, 엣지각), 카빙(호 반경)에 대한 보상은 없다. 옆미끄럼은 그립 마찰로 에너지를 잃어
     느려지므로, 물리가 맞다면 카빙은 보상 없이도 빠른 방법으로 나와야 한다. 패럴렐/arc 통계는
     비교용으로만 계속 쌓는다(부모 _task_reward를 부르고 보상은 버림). 관측/스탠스는 ParallelTrackEnv와
-    같아서 carve1 등의 가중치로 시작할 수 있다.
+    같아서 carve1 등의 가중치로 시작할 수 있다. 할인율은 --gamma 0.995(턴 하나 ~2초)로 학습한다.
     """
+
+    fall_penalty = RACE_FAIL_PENALTY
 
     def _on_reset(self):
         super()._on_reset()
