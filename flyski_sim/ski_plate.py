@@ -40,7 +40,9 @@ OVERHANG_SCALE = 3.5         # 판 0.43 -> 0.81cm(all_mountain). 길이 스윕�
 HALF_THICKNESS_CM = 0.004
 BINDING_HEIGHT_CM = 0.01
 _THETA_MAX_EXTRA_DEG = 8.0  # stiffness=0일 때 추가로 허용하는 휨각.
-BEND_STIFFNESS_SCALE = 0.1  # 판 굽힘 강성 배율(48번, 1.0이면 휨 호가 약하고 방향이 제각각, 0.1에서 엣지 방향대로 대칭 턴). 실제 스키처럼 휨(flex)을 타는 사람 몸무게와 사이드컷에 맞추는 설계 변수.
+BEND_STIFFNESS_SCALE = 0.2  # 팁/테일 돌출부 굽힘 강성 배율(48번, 1.0이면 휨 호가 약하고 방향이 제각각, 0.1~0.2에서 엣지 방향대로 턴, 0.1은 힌지 최대 16도로 너무 물렁). 실제 스키처럼 휨(flex)을 타는 사람 몸무게와 사이드컷에 맞추는 설계 변수.
+FOOT_BEND_STIFFNESS_SCALE = 1.0   # 발 구간(T3~T1, 바인딩) 굽힘 강성 배율. 전체를 0.1배로 했더니 정책이 다리로 발 구간을
+                                  # 힌지당 최대 10도씩 접어 그립 방향을 비틀었다(48번). 실제 스키도 바인딩 밑은 단단하다.
 _CAMBER_DEG_PER_HINGE = 1.5
 _TARGET_OMEGA = 1000.     # 힌지 고유진동수 상한(rad/s) — physics dt(2e-4s)에서 안정.
 _HINGE_RANGE_RAD = 0.35   # 굽힘/비틀림 힌지 가동범위 ±20°.
@@ -271,6 +273,11 @@ def attach_side_plates(walker, profile: SkiProfile,
         #   하중으로 자유롭게 휜다(38번).
         # 판 구속이 부드러우면(solref 0.002) 판 힌지 관성이 작아 크게 어긋나서 하드하게.
         foot_step = max(int(round(abs(float((t1['tip_th'] - t2['tip_th']) @ ex)) / seg_len)), 1)
+        k_foot = k_bend / BEND_STIFFNESS_SCALE * FOOT_BEND_STIFFNESS_SCALE
+        for d in (+1, -1):
+            for j in chain[('bend', d)][:foot_step]:
+                for key, val in hinge_kw(k_foot).items():
+                    setattr(j, key, val)
         hard = dict(solref=(0.0004, 1.), solimp=(0.99, 0.999, 0.001, 0.5, 2.))
         for kind in (('bend', 'twist') if COUPLE_BENDING else ()):
             groups = [[(j, d) for d in (+1, -1) for j in chain[(kind, d)][:foot_step]]]
