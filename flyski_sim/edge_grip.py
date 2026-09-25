@@ -45,6 +45,16 @@ FLAT_GRIP_FRACTION = 0.25
 # thorax는 V0=0.5 시절 조각에 걸면 발산해서 택했지만, 옆 힘이 판->다리->몸 하중 경로를
 # 우회해서 사면에서 무게중심을 옮겨도 판 하중이 거의 안 바뀌었다(38번).
 APPLY_TO = 'thorax'
+# 그립이 버티는 방향(RESEARCH_NOTES 48번).
+# - 'formula': 판 축을 접촉 위치 s만큼 s / (R_sidecut x cos phi) 돌린 "카빙 호" 접선(35번의 가정).
+# - 'shape': 접촉한 판 조각 자신의 x축(설면 투영). 호는 판이 실제로 휜 모양에서만 나온다.
+ARC_SOURCE = 'shape'
+# 옆으로 버티는 한계(마찰 계수 꼴, 수직력 N 배수).
+# - 'ramp': edge_grip x (FLAT + (1-FLAT) x clip((phi-PHI0)/(PHI1-PHI0))), 20°에서 포화(35번).
+# - 'platform': 엣지가 눈을 깎아 만든 선반 역학. 선반이 판 바닥과 나란히 phi만큼 기울어 있으면
+#   수직력의 옆 성분 + 마찰로 N x tan(phi + atan(mu_flat))까지 버틴다. 필요한 엣지각은 힘의
+#   균형(사면 기울기, 원심력)으로 정해진다. 상한은 눈이 버티는 전단 한계 snow.edge_grip(선반 붕괴).
+GRIP_MODEL = 'platform'
 
 
 class EdgeGrip:
@@ -77,6 +87,7 @@ class EdgeGrip:
         self._rsc = np.array([self._r_sidecut[s] for s in self._sides], dtype=float)
         self._geom_body = np.array(m.geom_bodyid)
         self._body_root = np.array(m.body_rootid)
+        self.dissipated = 0.   # 그립이 옆미끄럼으로 소산한 에너지 누적(erg). reset_metrics와 무관하게 계속 쌓인다.
         self.reset_metrics()
 
     def reset_metrics(self):
@@ -126,19 +137,31 @@ class EdgeGrip:
         ex = d.xmat[self._roots[side]].reshape(-1, 3, 3)[:, :, 0]
         ex = ex - np.sum(ex * n, axis=1)[:, None] * n
         ex /= np.maximum(np.linalg.norm(ex, axis=1), 1e-9)[:, None]
-        rsc = self._rsc[side]
-        kappa = np.where(rsc > 0, -np.sign(eyn) / (np.maximum(rsc, 1e-9) * np.cos(phi)), 0.)
-        theta = kappa * np.sum((pos - d.xpos[self._roots[side]]) * ex, axis=1)
-        tangent = np.cos(theta)[:, None] * ex + np.sin(theta)[:, None] * np.cross(n, ex)
+        if ARC_SOURCE == 'shape':
+            tangent = d.xmat[body].reshape(-1, 3, 3)[:, :, 0]
+            tangent = tangent - np.sum(tangent * n, axis=1)[:, None] * n
+            tangent /= np.maximum(np.linalg.norm(tangent, axis=1), 1e-9)[:, None]
+        else:
+            rsc = self._rsc[side]
+            kappa = np.where(rsc > 0, -np.sign(eyn) / (np.maximum(rsc, 1e-9) * np.cos(phi)), 0.)
+            theta = kappa * np.sum((pos - d.xpos[self._roots[side]]) * ex, axis=1)
+            tangent = np.cos(theta)[:, None] * ex + np.sin(theta)[:, None] * np.cross(n, ex)
         t = np.cross(n, tangent)                           # 호의 왼쪽 법선.
         cv = d.cvel[body]
         v = cv[:, 3:] + np.cross(cv[:, :3], pos - d.subtree_com[self._body_root[body]])
         v_t = v - np.sum(v * n, axis=1)[:, None] * n
         v_lat = np.sum(v_t * t, axis=1)
         snow = self._snow_at(float(d.xpos[self._target][0]))   # 설질 구간은 수십 cm라 몸 위치로.
-        ramp = np.clip((phi - PHI0) / (PHI1 - PHI0), 0., 1.)
-        mu = snow.edge_grip * (FLAT_GRIP_FRACTION + (1. - FLAT_GRIP_FRACTION) * ramp)
+        if GRIP_MODEL == 'platform':
+            # 선반 각 phi + 마찰각이 90°를 넘으면(판이 거의 옆으로 누움) tan이 음수가 돼 그립이 거꾸로
+            # 걸렸다(몇 스텝 만에 넘어짐). 88°에서 자른다.
+            ang = np.minimum(phi + np.arctan(FLAT_GRIP_FRACTION * snow.edge_grip), np.deg2rad(88.))
+            mu = np.minimum(np.tan(ang), snow.edge_grip)
+        else:
+            ramp = np.clip((phi - PHI0) / (PHI1 - PHI0), 0., 1.)
+            mu = snow.edge_grip * (FLAT_GRIP_FRACTION + (1. - FLAT_GRIP_FRACTION) * ramp)
         th = np.tanh(v_lat / V0)
+        self.dissipated += float(np.sum(mu * N * th * v_lat)) * m.opt.timestep
         if self._enabled:
             f = -(mu * N * th)[:, None] * t
             center = d.xipos[self._target]

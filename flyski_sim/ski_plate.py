@@ -40,6 +40,7 @@ OVERHANG_SCALE = 3.5         # 판 0.43 -> 0.81cm(all_mountain). 길이 스윕�
 HALF_THICKNESS_CM = 0.004
 BINDING_HEIGHT_CM = 0.01
 _THETA_MAX_EXTRA_DEG = 8.0  # stiffness=0일 때 추가로 허용하는 휨각.
+BEND_STIFFNESS_SCALE = 0.1  # 판 굽힘 강성 배율(48번, 1.0이면 휨 호가 약하고 방향이 제각각, 0.1에서 엣지 방향대로 대칭 턴). 실제 스키처럼 휨(flex)을 타는 사람 몸무게와 사이드컷에 맞추는 설계 변수.
 _CAMBER_DEG_PER_HINGE = 1.5
 _TARGET_OMEGA = 1000.     # 힌지 고유진동수 상한(rad/s) — physics dt(2e-4s)에서 안정.
 _HINGE_RANGE_RAD = 0.35   # 굽힘/비틀림 힌지 가동범위 ±20°.
@@ -165,7 +166,7 @@ def attach_side_plates(walker, profile: SkiProfile,
         flex_theta = np.deg2rad(1. + _THETA_MAX_EXTRA_DEG * (1 - profile.flex_stiffness))
         tors_theta = np.deg2rad(1. + _THETA_MAX_EXTRA_DEG * (1 - profile.torsional_stiffness))
         # 모멘트 팔 L/16: 처음 L/4로 잡았더니 실측 휨이 목표의 1/5~1/8이었다(보정값).
-        k_bend = half_w_load * (length / 16) / flex_theta
+        k_bend = BEND_STIFFNESS_SCALE * half_w_load * (length / 16) / flex_theta
         k_tors = half_w_load * (profile.width_waist_cm / 2) / tors_theta
         seg_mass = 3 * profile.mass_g / n_segments           # 기존 N=6과 총 질량 동일.
 
