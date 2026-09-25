@@ -20,7 +20,7 @@ import warnings
 
 import mujoco
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from flyski_sim.play import TrajectoryOverlay
 from flyski_sim.rl_task import CONTROL_DT, ENVS
@@ -55,7 +55,8 @@ def make_policy(env, controller, model_path=None):
 
 
 def record(env, policy, name, seconds=None, fps=30, width=960, height=540,
-           distance=3.0, azimuth=0., elevation=-35., seed=0):
+           distance=3.0, azimuth=0., elevation=-35., seed=0, follow=False):
+    """follow=True면 카메라가 진행 방향 뒤에서 따라가고(엣지가 보이게) 화면에 좌우 판 엣지각을 쓴다."""
     os.makedirs(OUT, exist_ok=True)
     obs, _ = env.reset(seed=seed)
     p = env.env.physics
@@ -75,9 +76,21 @@ def record(env, policy, name, seconds=None, fps=30, width=960, height=540,
         k += 1
         if k % every == 0:
             cam.lookat[:] = p.data.xpos[env._th]
+            if follow:
+                v = p.data.qvel[:2]
+                if np.linalg.norm(v) > 1.:
+                    cam.azimuth = float(np.rad2deg(np.arctan2(v[1], v[0])))
             renderer.update_scene(d, camera=cam)
             overlay.draw(renderer.scene, append=True)
-            frames.append(renderer.render().copy())
+            frame = renderer.render().copy()
+            if follow and hasattr(env, '_plate_state'):
+                _, (e_l, e_r) = env._plate_state(p)
+                img = Image.fromarray(frame)
+                ImageDraw.Draw(img).text((20, 20), f'edge  L {np.rad2deg(e_l):+5.1f} deg   R {np.rad2deg(e_r):+5.1f} deg'
+                                         f'   speed {np.linalg.norm(p.data.qvel[:2]):4.1f} cm/s',
+                                         fill=(0, 0, 0), font_size=28)
+                frame = np.asarray(img)
+            frames.append(frame)
         if term or trunc:
             break
     renderer.close()
@@ -114,10 +127,11 @@ def main():
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--distance', type=float, default=3.0, help='카메라 거리(cm), S자 전체를 보려면 8~10')
     ap.add_argument('--elevation', type=float, default=-35.)
+    ap.add_argument('--follow', action='store_true', help='진행 방향 뒤에서 따라가는 카메라 + 엣지각 표시')
     args = ap.parse_args()
     env = ENVS[args.stage](seed=args.seed)
     record(env, make_policy(env, args.controller, args.model), args.name, args.seconds, seed=args.seed,
-           distance=args.distance, elevation=args.elevation)
+           distance=args.distance, elevation=args.elevation, follow=args.follow)
 
 
 if __name__ == '__main__':
