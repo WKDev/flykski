@@ -12,6 +12,7 @@ rollout_zero.gif / rollout_policy.gif(0 액션 vs 학습된 정책, 결정적).
 from __future__ import annotations
 
 import argparse
+import collections
 import csv
 import os
 import time
@@ -89,8 +90,10 @@ class LogCallback:
                np.mean(arc), np.mean(level)]
         with open(self.path, 'a', newline='') as f:
             csv.writer(f).writerow(row)
+        counts = collections.Counter(reason)
         print('ts={} min={} eps={} return={:.2f} len={:.0f} gates={:.2f} misses={:.2f} carve={:.2f} '
-              'speed_err={:.2f} fall={:.2f} arc={:.1f} level={:.1f}'.format(*row), flush=True)
+              'speed_err={:.2f} fall={:.2f} arc={:.1f} level={:.1f}'.format(*row),
+              ' '.join(f'{k}:{v}' for k, v in sorted(counts.items())), flush=True)
         self.buf = []
 
 
@@ -242,6 +245,10 @@ def main():
                 target_kl=args.target_kl,
                 gamma=args.gamma, gae_lambda=0.95, clip_range=0.2,
                 policy_kwargs=dict(net_arch=[256, 256], log_std_init=args.log_std), verbose=0, seed=0)
+    # PPO 내부 지표(approx_kl, clip_fraction, explained_variance, std 등)를 업데이트마다 CSV로(48번:
+    # race4가 롤아웃 두 번 만에 무너졌는데 원인을 볼 지표가 없었다).
+    from stable_baselines3.common.logger import configure
+    model.set_logger(configure(os.path.join(out, 'sb3'), ['csv']))
     if args.init:
         prev = PPO.load(args.init, device='cpu')
         model.policy.load_state_dict(prev.policy.state_dict())
