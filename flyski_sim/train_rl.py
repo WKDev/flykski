@@ -51,7 +51,7 @@ class LogCallback:
                         outer.buf.append((ep['r'], ep['l'], info.get('gates', 0),
                                           info.get('misses', 0), info.get('carve', 0.),
                                           info.get('track', 0.) / max(ep['l'], 1),
-                                          info.get('reason', ''), info.get('arc', 0.)))
+                                          info.get('reason', ''), info.get('arc', 0.), info.get('level', 0.)))
                 return time.time() < deadline
 
             def _on_rollout_end(self):
@@ -77,20 +77,20 @@ class LogCallback:
         with open(path, 'w', newline='') as f:
             csv.writer(f).writerow(['timesteps', 'minutes', 'episodes', 'mean_return', 'mean_len',
                                     'mean_gates', 'mean_misses', 'mean_carve', 'mean_speed_err',
-                                    'fall_frac', 'mean_arc'])
+                                    'fall_frac', 'mean_arc', 'mean_level'])
 
     def flush(self, timesteps):
         if not self.buf:
             return
-        r, l, g, m, c, e, reason, arc = zip(*self.buf)
+        r, l, g, m, c, e, reason, arc, level = zip(*self.buf)
         self.returns = (self.returns + list(r))[-BEST_WINDOW:]
         row = [timesteps, round((time.time() - self.t0) / 60, 2), len(r), np.mean(r), np.mean(l),
                np.mean(g), np.mean(m), np.mean(c), np.mean(e), np.mean([x not in ('time', 'finish') for x in reason]),
-               np.mean(arc)]
+               np.mean(arc), np.mean(level)]
         with open(self.path, 'a', newline='') as f:
             csv.writer(f).writerow(row)
         print('ts={} min={} eps={} return={:.2f} len={:.0f} gates={:.2f} misses={:.2f} carve={:.2f} '
-              'speed_err={:.2f} fall={:.2f} arc={:.1f}'.format(*row), flush=True)
+              'speed_err={:.2f} fall={:.2f} arc={:.1f} level={:.1f}'.format(*row), flush=True)
         self.buf = []
 
 

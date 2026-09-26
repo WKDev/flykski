@@ -559,6 +559,9 @@ class CarveTrackEnv(ParallelTrackEnv):
 RACE_PROGRESS_PER_CM = 5.       # 경로를 따라 전진한 호 길이 1cm당 보상.
 RACE_CORRIDOR_CM = 3.0          # 경로에서 이만큼 넘게 벗어나면 게이트 놓침 = 실격(종료 + 넘어짐 벌점). 1.5면 새 물리(48번)에서 carve1이 8/8 초반 실격.
 RACE_CTRL = -0.01
+RACE_PSI_START_DEG = 65.        # 자동 커리큘럼 시작 상한. race3에서 최대 진행각 56~65°는 8/9 완주, 67~84°는 0/15(48번).
+RACE_LEVEL_WINDOW = 20
+RACE_LEVEL_UP, RACE_LEVEL_DOWN, RACE_LEVEL_STEP = 0.7, 0.3, 2.5
 RACE_FAIL_PENALTY = -100.       # 실격/넘어짐. -20(TURN)이면 턴 하나 진행 보상보다 작아 race1/race2가 빠르게 달리다
                                 # 통로를 벗어나는 쪽으로 무너졌다(10판 중 7판 실격, 48번).
 
@@ -574,9 +577,34 @@ class RaceTrackEnv(CarveTrackEnv):
 
     fall_penalty = RACE_FAIL_PENALTY
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._level = RACE_PSI_START_DEG           # 자동 커리큘럼: 최대 진행각 상한(도).
+        self._outcomes = []
+
     def _on_reset(self):
+        # 직전 에피소드 결과로 난이도 조정(환경마다 따로). 최근 RACE_LEVEL_WINDOW판 완주율이
+        # RACE_LEVEL_UP 넘으면 상한 +RACE_LEVEL_STEP, RACE_LEVEL_DOWN 밑이면 -.
+        if len(self._outcomes) >= RACE_LEVEL_WINDOW:
+            rate = float(np.mean(self._outcomes[-RACE_LEVEL_WINDOW:]))
+            if rate > RACE_LEVEL_UP or rate < RACE_LEVEL_DOWN:
+                step = RACE_LEVEL_STEP if rate > RACE_LEVEL_UP else -RACE_LEVEL_STEP
+                self._level = float(np.clip(self._level + step, RACE_PSI_START_DEG, TURN_PSI_MAX_DEG[1]))
+                self._outcomes = []
         super()._on_reset()
+        # 부모가 뽑은 경로를 [55°, 현재 상한]에서 다시 뽑는다(주기는 그대로).
+        p = self.env.physics
+        pos = p.data.xpos[self._th]
+        psi_max = np.deg2rad(self._rng.uniform(TURN_PSI_MAX_DEG[0], self._level)) * np.sign(self.reference.psi_max)
+        self.reference = TurnPath(float(pos[0]), float(pos[1]), psi_max, self.reference.period)
+        self._stats['level'] = self._level
         self._s_prev = 0.
+
+    def step(self, action):
+        out = super().step(action)
+        if out[2] or out[3]:
+            self._outcomes.append(float(out[4].get('reason') in ('time', 'finish')))
+        return out
 
     def _task_reward(self, p, a, metrics, odor):
         super()._task_reward(p, a, metrics, odor)            # 통계(track/carve/arc)만.
