@@ -574,6 +574,12 @@ RACE_CORRIDOR_CM = 3.0          # 경로에서 이만큼 넘게 벗어나면 게
 RACE_CTRL = -0.01
 RACE_PSI_START_DEG = 15.        # 자동 커리큘럼 시작 상한(거의 직활강). 49번 전엔 65(race3: 56~65° 8/9, 67~84° 0/15)였는데
                                 # 그립 버그 수정 후 처음부터 학습하면 25°에서 1.4초 만에 통로 이탈만 반복해 배우지 못했다.
+RACE_SPEED_TARGET_FROM_LEVEL = 45.   # 커리큘럼 상한이 이 각 이상인 환경부터 목표 속도 보상(턴을 배우기 시작한 뒤).
+RACE_TARGET_LAT_G = 0.3              # 목표 원심 가속도(g 배수).
+RACE_TARGET_SPEED_RANGE = (15., 60.)  # cm/s. 60: 반경 10cm에서 그립 한계(~0.8g, 88cm/s) 아래, 직선 구간 상한.
+RACE_SPEED_W = 1.0                   # 목표 속도 항 최대(스텝당).
+RACE_SPEED_SIGMA_FRAC = 0.3          # 허용 폭 = 목표의 30%.
+RACE_PROGRESS_PER_CM_WITH_TARGET = 1.   # 목표 속도 보상이 켜지면 전진 보상은 줄인다(속도 경쟁 대신 적정 속도).
 RACE_PSI_BAND_DEG = 15.         # 코스 최대 진행각은 [상한 - 이 값, 상한]에서 뽑는다(최소 5°).
 RACE_LEVEL_WINDOW = 20
 RACE_LEVEL_UP, RACE_LEVEL_DOWN, RACE_LEVEL_STEP = 0.7, 0.3, 2.5
@@ -624,10 +630,27 @@ class RaceTrackEnv(CarveTrackEnv):
 
     def _task_reward(self, p, a, metrics, odor):
         super()._task_reward(p, a, metrics, odor)            # 통계(track/carve/arc)만.
-        s = self.reference._i * 0.05                       # TurnPath 경로점 간격 ds = 0.05cm.
+        i = self.reference._i
+        s = i * 0.05                                       # TurnPath 경로점 간격 ds = 0.05cm.
         ds = float(np.clip(s - self._s_prev, -0.5, 0.5))   # 경로 인덱스가 튀는 경우 방지.
         self._s_prev = s
-        return dict(progress=RACE_PROGRESS_PER_CM * ds, ctrl=RACE_CTRL * float(np.mean(a ** 2)))
+        ctrl = RACE_CTRL * float(np.mean(a ** 2))
+        if self._level < RACE_SPEED_TARGET_FROM_LEVEL:
+            return dict(progress=RACE_PROGRESS_PER_CM * ds, ctrl=ctrl)
+        # 목표 속도(50번, 사용자 합의): 경로 곡률 반경 R에서 원심 가속도가 RACE_TARGET_LAT_G x g가 되는
+        # 속력 sqrt(a g R). 일반인 상급 카빙(원심 ~0.3~0.5g, 대략)과 같은 비율을 과제 조건으로 둔다.
+        v_t = self._target_speed(i)
+        v = float(np.linalg.norm(p.data.qvel[:2]))
+        self._stats['v_err'] = self._stats.get('v_err', 0.) + abs(v - v_t)
+        return dict(progress=RACE_PROGRESS_PER_CM_WITH_TARGET * ds, ctrl=ctrl,
+                    speed=RACE_SPEED_W * float(np.exp(-((v - v_t) / (RACE_SPEED_SIGMA_FRAC * v_t)) ** 2)))
+
+    def _target_speed(self, i: int) -> float:
+        psi = self.reference.psi
+        j0, j1 = max(i - 20, 0), min(i + 20, len(psi) - 1)           # +-1cm 구간 평균 곡률.
+        kappa = abs(float(psi[j1] - psi[j0])) / max((j1 - j0) * 0.05, 1e-6)
+        r = 1. / max(kappa, 1e-6)
+        return float(np.clip(np.sqrt(RACE_TARGET_LAT_G * 980. * r), *RACE_TARGET_SPEED_RANGE))
 
     def _termination(self, p):
         reason = super()._termination(p)
