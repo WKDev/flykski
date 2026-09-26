@@ -33,7 +33,11 @@ from flyski_sim.terrain import SlopedMoguls
 
 CONTROL_DT = 0.01            # 정책 주기(s). 물리 PHYSICS_DT x 서브스텝.
 PHYSICS_DT = 2e-4            # 물리 타임스텝(s). 4e-4는 쐐기/볼록성 검사는 통과했지만 대회전 전문가 생존 7/8 -> 2/8로 망가져 되돌림(46번).
-ACTION_SCALE = 0.3           # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
+# 다리 관절 토크 상한 = LEG_TORQUE_LIMIT_BW x 몸무게 x 0.1cm(다리 길이 규모). flybody 다리는 토크 상한 없는
+# 위치 서보라 학습 정책이 자세 유지(0.002~0.009 dyn*cm)의 10~60배(최대 0.55)를 썼다. 초파리 다리
+# 최대 토크 문헌값은 확보 못 해서 가정값(몸무게 3배)이다(49번). None이면 상한 없음.
+LEG_TORQUE_LIMIT_BW = 3.
+ACTION_SCALE = 0.3          # 액션 1 = 스탠스에서 0.3rad(PPO 1회차 값). 쐐기 20°에 관절이
                              # 최대 0.78rad 움직여야 해서 커리큘럼 단계는 1.0을 쓴다.
 EPISODE_SECONDS = 3.0
 # 코스(반길이, 반폭) cm. 41번에 60x8, 사용자 요청으로 200x50(400cm x 100cm)으로 크게.
@@ -111,6 +115,14 @@ class SkiCourseEnv(gym.Env):
         self.env.reset()
         p = self.env.physics
         m = p.model
+        if LEG_TORQUE_LIMIT_BW is not None:
+            tau = LEG_TORQUE_LIMIT_BW * float(m.body_subtreemass[m.name2id('walker/thorax', 'body')]
+                                              * np.linalg.norm(m.opt.gravity)) * 0.1
+            for i in range(m.nu):
+                name = m.id2name(i, 'actuator') or ''
+                if any(t in name for t in ('_T1_', '_T2_', '_T3_')) and 'adhere' not in name:
+                    m.actuator_forcelimited[i] = 1
+                    m.actuator_forcerange[i] = (-tau, tau)
         names = self.env.action_spec().name.split('\t')
         stance = self.task._stance
         self._leg_names = [n for n in names if n in stance]
