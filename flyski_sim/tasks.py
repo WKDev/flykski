@@ -16,7 +16,7 @@ from flyski_sim.ski_stance import compute_ski_stance
 from flyski_sim.edge_grip import EdgeGrip
 from flyski_sim.snow import SNOW_PRESETS
 
-_SPAWN_CLEARANCE_CM = 0.3  # 지형 표면 위로 띄우는 여유 높이, cm.
+_SPAWN_CLEARANCE_CM = 0.17  # 지형 표면 위로 띄우는 여유 높이(몸통 기준, cm). 0.3이면 판이 ~1.3mm 떨어져 착지하며 튀었다(48번).
 
 
 class SlopeSmokeTask(TemplateTask):

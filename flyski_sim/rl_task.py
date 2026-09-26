@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import os
 import numpy as np
 import gymnasium as gym
 from dm_control import composer
@@ -38,7 +39,7 @@ EPISODE_SECONDS = 3.0
 # 코스(반길이, 반폭) cm. 41번에 60x8, 사용자 요청으로 200x50(400cm x 100cm)으로 크게.
 # 격자는 cm당 15점 유지: 평면이어도 2점(0.5cm 칸)이면 판 조각(0.06cm)보다 칸이 커서 접촉이
 # 들쭉날쭉해져 전문가가 코스를 벗어났다. 15점(격자 900만 개)도 생성 7초라 괜찮음(41번).
-COURSE = dict(dim=(200., 50.), grid_density=15, slope_deg=20., gate_spacing=8., gate_amplitude=3.,
+COURSE = dict(dim=(200., 50.), grid_density=15, slope_deg=float(os.environ.get('FLYSKI_SLOPE_DEG', 20.)), gate_spacing=8., gate_amplitude=3.,
               pass_radius=1.5, spawn_margin=2.)
 
 REWARD_WEIGHTS = dict(
