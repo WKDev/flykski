@@ -572,7 +572,9 @@ class CarveTrackEnv(ParallelTrackEnv):
 RACE_PROGRESS_PER_CM = 5.       # 경로를 따라 전진한 호 길이 1cm당 보상.
 RACE_CORRIDOR_CM = 3.0          # 경로에서 이만큼 넘게 벗어나면 게이트 놓침 = 실격(종료 + 넘어짐 벌점). 1.5면 새 물리(48번)에서 carve1이 8/8 초반 실격.
 RACE_CTRL = -0.01
-RACE_PSI_START_DEG = 65.        # 자동 커리큘럼 시작 상한. race3에서 최대 진행각 56~65°는 8/9 완주, 67~84°는 0/15(48번).
+RACE_PSI_START_DEG = 15.        # 자동 커리큘럼 시작 상한(거의 직활강). 49번 전엔 65(race3: 56~65° 8/9, 67~84° 0/15)였는데
+                                # 그립 버그 수정 후 처음부터 학습하면 25°에서 1.4초 만에 통로 이탈만 반복해 배우지 못했다.
+RACE_PSI_BAND_DEG = 15.         # 코스 최대 진행각은 [상한 - 이 값, 상한]에서 뽑는다(최소 5°).
 RACE_LEVEL_WINDOW = 20
 RACE_LEVEL_UP, RACE_LEVEL_DOWN, RACE_LEVEL_STEP = 0.7, 0.3, 2.5
 RACE_FAIL_PENALTY = -100.       # 실격/넘어짐. -20(TURN)이면 턴 하나 진행 보상보다 작아 race1/race2가 빠르게 달리다
@@ -605,10 +607,11 @@ class RaceTrackEnv(CarveTrackEnv):
                 self._level = float(np.clip(self._level + step, RACE_PSI_START_DEG, TURN_PSI_MAX_DEG[1]))
                 self._outcomes = []
         super()._on_reset()
-        # 부모가 뽑은 경로를 [55°, 현재 상한]에서 다시 뽑는다(주기는 그대로).
+        # 부모가 뽑은 경로를 [상한 - RACE_PSI_BAND_DEG, 상한]에서 다시 뽑는다(주기는 그대로).
         p = self.env.physics
         pos = p.data.xpos[self._th]
-        psi_max = np.deg2rad(self._rng.uniform(TURN_PSI_MAX_DEG[0], self._level)) * np.sign(self.reference.psi_max)
+        lo = max(5., self._level - RACE_PSI_BAND_DEG)
+        psi_max = np.deg2rad(self._rng.uniform(lo, self._level)) * np.sign(self.reference.psi_max)
         self.reference = TurnPath(float(pos[0]), float(pos[1]), psi_max, self.reference.period)
         self._stats['level'] = self._level
         self._s_prev = 0.
