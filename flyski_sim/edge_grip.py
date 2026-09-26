@@ -36,7 +36,7 @@ PHI0 = np.deg2rad(3.)    # 이보다 평평하면 그립 없음(플랫 스키).
 PHI1 = np.deg2rad(20.)   # 이 이상이면 그립 최대.
 V0 = 2.0                 # cm/s, 정지마찰을 부드럽게 근사하는 속도 스케일. 0.5면 과도응답이 커서
                          # 예측보다 2~4배 급하게 돌았다(RESEARCH_NOTES 35번).
-N_CAP_BODYWEIGHTS = 2.   # 접촉 하나의 수직력 상한(몸무게 배수).
+N_CAP_BODYWEIGHTS = 2.   # 판 하나의 하중 상한(몸무게 배수). 49번 전엔 접촉 하나 기준.
 # 판이 평평해도(엣지 < PHI0) 주는 기본 횡 그립 비율. 0이면 평평한 스키가 진행 방향으로
 # 정렬되려는 힘이 전혀 없어서, 0.81cm 판에선 폴라인으로 미끄러지면서 몸이 0.4초에 70°
 # 넘게 돌았다(RESEARCH_NOTES 38번). 실제 스키도 옆미끄럼 저항이 활주 마찰보다 크다(가정값).
@@ -120,16 +120,7 @@ class EdgeGrip:
         sign = np.where(use1[idx], -1., 1.)[:, None]
         n = sign * con.frame[idx, :3]                      # 지면 -> 스키 방향 법선.
         pos = con.pos[idx]
-        # 비활성 접촉(여유 거리 밖)은 efc_address = -1. 그대로 인덱싱하면 efc_force의 마지막 값을
-        # 읽어 엉뚱한 힘이 걸리고 4스텝 만에 발산했다(mj_contactForce는 이때 0을 돌려줌).
-        addr = con.efc_address[idx]
-        N = np.where(addr >= 0, d.efc_force[np.maximum(addr, 0)], 0.)
-        # efc_force에 NaN이 든 행이 가끔 있다(루프 버전의 mj_contactForce는 유한값을 냄). 0으로.
-        N = np.nan_to_num(N, nan=0., posinf=0., neginf=0.)
-        # efc_force의 일부 행이 NaN인 순간이 있었다(판 접촉 행, 시뮬레이션은 정상 진행). 그대로 쓰면
-        # 몸통 합력 전체가 NaN이 돼 4스텝 만에 발산해서 NaN/inf는 0으로 둔다(45번).
-        N = np.nan_to_num(N, nan=0., posinf=0., neginf=0.)
-        N = np.minimum(np.maximum(N, 0.), self._n_cap)
+        N = self._plate_normal_load(d, con, idx, side, n, sign)
         body = self._geom_body[geom]
         ey = d.xmat[body].reshape(-1, 3, 3)[:, :, 1]
         eyn = np.sum(ey * n, axis=1)
@@ -178,6 +169,28 @@ class EdgeGrip:
             a['tan'] += float(np.linalg.norm(v_t[sel], axis=1).sum())
             a['edge'] += float(phi[sel].sum())
             a['util'] += float(np.where(mu[sel] > 0., np.abs(th[sel]), 1.).sum())
+
+    def _plate_normal_load(self, d, con, idx, side, n, sign):
+        """접촉별 수직력(그립 한계 계산용) = efc_force[efc_address](elliptic cone 첫 행). 설면을 향하지
+        않는 접촉(법선이 평균 설면 법선에서 30° 넘게 기운 것 = 판(box)-hfield 삼각형 격자 옆면과의
+        가짜 접촉, 11%)은 0. 판마다 합이 몸무게의 N_CAP_BODYWEIGHTS배를 넘으면 비례 축소.
+
+        49번 전에는 이 값이 쓰레기였다: dm_control legacy_step 순서(step2 뒤 step1) 때문에 새 접촉
+        목록으로 이전 풀이의 재할당된 메모리를 읽었다(NaN, 몸무게 10^5배). tasks에서 legacy_step을
+        끈 뒤로 두 판 하중 합의 시간 평균이 몸무게 x cos(경사)와 맞는다(0.946 vs 0.940).
+        """
+        addr = con.efc_address[idx]
+        N = np.where(addr >= 0, d.efc_force[np.maximum(addr, 0)], 0.)
+        N = np.maximum(np.nan_to_num(N, nan=0., posinf=0., neginf=0.), 0.)
+        up = n.mean(axis=0)
+        up /= max(np.linalg.norm(up), 1e-9)
+        N = np.where((n @ up) > np.cos(np.deg2rad(30.)), N, 0.)
+        for k in range(len(self._sides)):
+            sel = side == k
+            total = float(N[sel].sum())
+            if total > self._n_cap:
+                N[sel] *= self._n_cap / total
+        return N
 
     def step_loop(self, physics):
         """원래 접촉별 파이썬 루프 버전(벡터화 전, 비교/APPLY_TO='segment'용)."""

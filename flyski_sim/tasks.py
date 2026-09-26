@@ -82,6 +82,23 @@ class SlopeSmokeTask(TemplateTask):
         self._walker.set_pose(physics, position=new_pos, quaternion=quat)
         if hasattr(self._arena, 'apply_snow_friction_at'):
             self._arena.apply_snow_friction_at(physics, x)
+        # 스키 geom은 priority=1이라 스키-눈 접촉의 solref/solimp도 스키 것이 쓰인다. 그런데 스키 geom이
+        # flybody 몸 기본값(fruitfly.xml, solref 0.0002 = 물리 스텝 하나)을 물려받아 가장 단단한
+        # 접촉이 됐고, 0.2ms 스텝마다 접촉이 켜졌다 꺼졌다(35%, 그립도 그만큼 끊김, 49번). 마찰은
+        # 스키 것(ski_friction), 접촉 무르기는 눈 것을 쓴다.
+        # dm_control 기본(legacy_step)은 mj_step2(풀이+적분) 뒤 바로 mj_step1(다음 상태의 충돌/제약
+        # 재구성)을 부른다. 그러면 before_substep에서 d.contact/efc_address는 새 상태인데 efc_force는
+        # 이전 풀이 값이고, MuJoCo 3은 그 메모리를 step1에서 다시 할당해 사실상 쓰레기를 읽었다
+        # (NaN, 몸무게 10^5배, 1e-312; 35번 이후 그립 수직력 전부, 49번). legacy_step을 끄면 한 스텝이
+        # 충돌 -> 풀이 -> 적분이라 접촉 목록과 힘이 늘 짝이 맞는다(관측은 물리 스텝 하나 늦음).
+        physics.legacy_step = False
+        if self._skis:
+            snow = self._snow_at(x)
+            for unit in self._skis.values():
+                for geom in unit.geoms:
+                    gid = physics.model.name2id(geom.full_identifier, 'geom')
+                    physics.model.geom_solref[gid] = snow.solref
+                    physics.model.geom_solimp[gid] = snow.solimp
         if self._skis:
             self._grip = EdgeGrip(physics, self._skis, self._snow_at,
                                   enabled=self._edge_grip_enabled)
