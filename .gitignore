@@ -23,3 +23,7 @@ flybody-data/
 # RL 학습 산출물 중 큰 파일(롤아웃 GIF ~20MB, 로그)은 로컬에만 둔다.
 runs/*/*.gif
 runs/*.log
+
+# RL 시범 데이터(수십 MB)와 임시 실험 스크립트는 로컬에만.
+runs/*/bc_data.npz
+.scratch/

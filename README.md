@@ -62,6 +62,40 @@ python -m flyski_sim.run_topology_comparison_calibrated # real/shuffled/random 3
 
 macOS에서 `live_view`는 `mjpython -m flyski_sim.live_view`로 실행해야 한다(mujoco.viewer 제약).
 
+## 다른 PC에서 카빙 학습 이어가기 (2026-09-27 기준)
+
+지금 진행 중인 학습은 25° 사면 경주 단계(`--stage race`)다. 설계와 경과는 RESEARCH_NOTES 48~50번.
+레포에 이어 받을 가중치가 들어 있다: `runs/race25g/model_latest.zip`(가장 최근), `model_best.zip`.
+
+```bash
+git clone --recursive https://github.com/WKDev/flykski.git && cd flykski
+conda env create -f environment.yml && conda activate flybody
+pip install -e ./flybody
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r setup/rl_requirements.txt
+python setup/verify.py
+
+# 이어서 학습(이름은 새로). 22시간 = 1320분
+python -m flyski_sim.train_rl --stage race --slope 25 --init runs/race25g/model_latest.zip \
+    --envs 20 --minutes 1320 --lr 3e-4 --target-kl 0.02 --gamma 0.995 --name race25h
+```
+
+Windows(conda 활성화 없이): `.\flyski train_rl --stage race --slope 25 --init runs/race25g/model_latest.zip --envs 20 --minutes 1320 --lr 3e-4 --target-kl 0.02 --gamma 0.995 --name race25h`
+
+- `--envs`: 워커 하나가 메모리 ~1GB를 쓴다. **(RAM GB - 8) 이하**로, 코어 수 - 2 이하로. 32GB면 20, 16GB면 8.
+  메모리가 모자라면 워커가 오류 없이 죽고 학습 전체가 멈춘다(`BrokenPipeError`, RESEARCH_NOTES 49번).
+- 커리큘럼 단계(최대 진행각 상한)는 가중치에 저장되지 않아 15°부터 다시 올라간다. 이미 배운 정책이면 금방 올라간다.
+  상한 45°부터 목표 속도 보상이 켜진다(50번).
+- 진행: `runs/race25h.log`(`level=`이 커리큘럼 단계), 곡선 `runs/race25h/progress.csv`, PPO 지표 `runs/race25h/sb3/progress.csv`.
+  `model_latest.zip`은 10분마다, `model_best.zip`은 최근 50판 평균 최고일 때 저장.
+- 보기/평가:
+  ```bash
+  python -m flyski_sim.play --stage race --model runs/race25h/model_best.zip
+  python -m flyski_sim.record --stage race --model runs/race25h/model_best.zip --name race25h --follow --distance 1.5 --elevation -12
+  FLYSKI_SLOPE_DEG=25 python -m flyski_sim.carve_eval runs/race25h/model_best.zip   # 카빙 판정(49번 기준)
+  ```
+  play/record/carve_eval은 `--slope`가 없으니 경사는 환경 변수로(PowerShell: `$env:FLYSKI_SLOPE_DEG=25`). 안 주면 20°.
+
 ## 하드웨어: GPU PC가 더 나은가?
 
 **지금 코드 기준으로는 GPU보다 CPU 코어 수가 중요하다.**
