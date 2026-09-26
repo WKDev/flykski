@@ -222,7 +222,11 @@ def main():
                     help='업데이트당 KL 상한(넘으면 그 롤아웃의 남은 epoch 중단). 0.02 정도면 붕괴 방지')
     ap.add_argument('--gamma', type=float, default=0.99,
                     help='할인율. 0.99 = 약 1초 앞(100스텝). race는 0.995(턴 하나)를 권장(48번)')
+    ap.add_argument('--slope', type=float, default=None,
+                    help='사면 경사(도). 환경 변수 FLYSKI_SLOPE_DEG를 대신 설정(기본 20). rl_task를 부르기 전에 정해야 한다')
     args = ap.parse_args()
+    if args.slope is not None:
+        os.environ['FLYSKI_SLOPE_DEG'] = str(args.slope)   # spawn 워커도 물려받는다.
     if args.envs <= 0:
         args.envs = max((os.cpu_count() or 4) - 2, 1)
     # 워커마다 numpy/torch가 코어 수만큼 스레드를 띄우면 환경 20여 개가 서로 경합한다(45번).
